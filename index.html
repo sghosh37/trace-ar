@@ -1,0 +1,1895 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trace AR</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#121212">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root { --bg:#121212; --panel:#1e1e1e; --fg:#eeeeee; --muted:#9a9a9a; --accent:#4fa3ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui, sans-serif; background:var(--bg); color:var(--fg); display:flex; justify-content:center; }
+  main { width:100%; max-width:620px; padding:24px 16px 48px; }
+  h1 { margin:0 0 4px; font-size:28px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--panel); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:block; margin:10px 0 6px; font-weight:600; }
+  input[type=number] { width:120px; padding:8px; font-size:16px; border-radius:6px; border:1px solid #444; background:#111; color:var(--fg); }
+  input[type=range] { width:70%; vertical-align:middle; }
+  input[type=file] { font-size:16px; color:var(--fg); }
+  #preview { display:none; max-width:100%; max-height:220px; margin-top:12px; border-radius:8px; }
+  button { margin-top:16px; width:100%; padding:16px; font-size:20px; font-weight:700; border:0; border-radius:10px; background:var(--accent); color:#001b33; cursor:pointer; }
+  button:disabled { background:#333; color:#777; cursor:not-allowed; }
+  #status { color:#ffb347; min-height:1.2em; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  td { padding:6px 4px; border-bottom:1px solid #2c2c2c; vertical-align:top; }
+  td:first-child { color:var(--accent); white-space:nowrap; padding-right:12px; }
+  h3 { margin:14px 0 6px; font-size:16px; }
+  ol { margin:8px 0 0; padding-left:20px; line-height:1.5; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<main>
+  <h1>Trace AR</h1>
+  <p class="sub">Scan any surface, project an image onto it, and trace.</p>
+
+  <div class="card">
+    <label for="file">Choose an image — opens it in the headset right away</label>
+    <input type="file" id="file" accept="image/*" multiple>
+    <p class="sub" id="libInfo" style="margin:6px 0 0"></p>
+    <img id="preview" alt="Selected image">
+
+    <label for="width">Image width (cm)</label>
+    <input type="number" id="width" value="21" min="2" max="300" step="0.5">
+
+    <label for="opacity">Starting opacity: <span id="opVal"></span></label>
+    <input type="range" id="opacity" min="0.1" max="1" step="0.05" value="0.5">
+
+    <button id="openImg" style="display:none">Open image in headset</button>
+    <button id="start" disabled>Start tracing (select a surface)</button>
+    <p id="status"></p>
+  </div>
+
+  <div class="card">
+    <strong>Two ways to start</strong>
+    <p class="sub" style="margin:6px 0 12px"><b>Choose an image</b> above and it opens straight away, floating in front of you — hold the trigger to carry it, <b>Lay flat</b> to put it on a table, then <b>Lock</b>.<br>
+    <b>Start tracing</b> first lets you select a surface (lasso / sweep / quick flat) and maps the image onto it.</p>
+    <strong>Surface selection (Start tracing)</strong>
+    <ol>
+      <li><b>Select the surface (Lasso).</b> Point at the surface and tap the trigger to drop dots — lines join them automatically. Or hold the trigger and drag to draw freehand. Tap near the first (yellow) dot, or press <b>Done</b>, to close the shape. The app then measures the surface inside the shape by itself (keep your hands out of the way for a second).<br>
+          <b>Detect</b> shows the objects your headset already knows from Space Setup (tables, desks, walls…). Point at one and pull the trigger — its outline loads as dots you can drag to fine-tune, then press <b>Done</b>.<br>
+          Other tools: <b>Sweep</b> (hold the trigger and paint over the surface) and <b>Quick flat</b> (tap once on flat paper).</li>
+      <li><b>Pick the image.</b> Press <b>Image</b> on the panel to open the gallery. It shows pictures from the <code>images</code> folder next to this app on your PC (Downloads\TraceAR\images), plus any picked on this page.</li>
+      <li><b>Map the image.</b> The image is projected onto the scanned shape, so it bends over curves. Hold the trigger on the surface to slide it around; use the panel to resize, turn and set opacity.</li>
+      <li><b>Hide the panel</b> with <b>Hide</b> (or click the left thumbstick). A small <b>Show panel</b> button floats above your left controller to bring it back. <b>Steady: Low / Medium / High</b> on the scan panel sets how much the pointer is smoothed.</li>
+      <li><b>Lock</b> and trace. Opacity still works while locked.</li>
+    </ol>
+    <h3>Controller shortcuts (map step)</h3>
+    <table>
+      <tr><td>Trigger hold</td><td>Slide the image across the surface (Grab On)</td></tr>
+      <tr><td>Grip hold</td><td>Slide the image (even with Grab Off)</td></tr>
+      <tr><td>Left stick</td><td>Nudge the image</td></tr>
+      <tr><td>Right stick ↕ / ↔</td><td>Size / turn</td></tr>
+      <tr><td>X / Y</td><td>Opacity down / up</td></tr>
+      <tr><td>A</td><td>Lock / unlock</td></tr>
+      <tr><td>Left stick click</td><td>Hide / show the control panel (any step)</td></tr>
+    </table>
+  </div>
+</main>
+
+<script type="module">
+import * as THREE from 'three';
+
+const $ = (id) => document.getElementById(id);
+const setStatus = (msg) => { $('status').textContent = msg; };
+
+// ---------- 2D page ----------
+try {
+  const p = JSON.parse(localStorage.getItem('traceAR') || '{}');
+  if (p.widthCm) $('width').value = p.widthCm;
+  if (p.opacity) $('opacity').value = p.opacity;
+} catch {}
+const savePrefs = () => {
+  try { localStorage.setItem('traceAR', JSON.stringify({ widthCm: +$('width').value, opacity: +$('opacity').value })); } catch {}
+};
+const showOp = () => { $('opVal').textContent = Math.round(+$('opacity').value * 100) + '%'; };
+$('opacity').addEventListener('input', showOp);
+showOp();
+
+const img = { texture: null, aspect: 1, name: '' };
+let arSupported = false;
+const localItems = [];   // images saved in the app (newest first): { url, name, id }
+
+// ---- image library: picked images are kept inside the app (IndexedDB) for the in-headset gallery ----
+const LIB_MAX = 60;
+function libDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('traceAR', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('images', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function libAll() {
+  try {
+    const db = await libDB();
+    return await new Promise((res) => {
+      const q = db.transaction('images').objectStore('images').getAll();
+      q.onsuccess = () => res(q.result.sort((a, b) => b.added - a.added));
+      q.onerror = () => res([]);
+    });
+  } catch { return []; }
+}
+async function libAdd(file) {
+  try {
+    const db = await libDB();
+    const all = await libAll();
+    const dup = all.find((x) => x.name === file.name && x.size === file.size);
+    const rec = { id: dup ? dup.id : Date.now() + '-' + Math.random().toString(36).slice(2), name: file.name, size: file.size, blob: file, added: Date.now() };
+    await new Promise((res) => { const t = db.transaction('images', 'readwrite'); t.objectStore('images').put(rec); t.oncomplete = res; t.onerror = res; });
+    // keep the library to a sensible size
+    const extra = (await libAll()).slice(LIB_MAX);
+    if (extra.length) await new Promise((res) => { const t = db.transaction('images', 'readwrite'); extra.forEach((x) => t.objectStore('images').delete(x.id)); t.oncomplete = res; t.onerror = res; });
+  } catch {}
+}
+async function libRefresh() {
+  const all = await libAll();
+  for (const it of localItems) URL.revokeObjectURL(it.url);
+  localItems.length = 0;
+  for (const r of all) localItems.push({ url: URL.createObjectURL(r.blob), name: r.name, id: r.id });
+  $('libInfo').textContent = localItems.length ? `${localItems.length} image${localItems.length > 1 ? 's' : ''} saved in the app — pick them inside the headset with Image.` : '';
+}
+libRefresh();
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+// load an image as the tracing texture (used by the page picker and the in-headset gallery)
+function loadImage(url, name, onDone) {
+  new THREE.TextureLoader().load(url, (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    if (img.texture) img.texture.dispose();
+    img.texture = tex;
+    img.aspect = tex.image.height / tex.image.width;
+    img.name = name;
+    onDone && onDone(true);
+  }, undefined, () => { setStatus('Could not load ' + name); onDone && onDone(false); });
+}
+
+$('file').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  const f = files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  $('preview').src = url;
+  $('preview').style.display = 'block';
+  // save every picked image in the app's library (newest last so the first pick ends up on top)
+  for (const x of files.slice().reverse()) await libAdd(x);
+  await libRefresh();
+  loadImage(url, f.name, (ok) => {
+    updateStart();
+    if (!ok) return;
+    $('openImg').style.display = arSupported ? 'block' : 'none';
+    // choosing an image opens it straight away, floating in front of you (no surface selection)
+    if (arSupported && !session) startSession('free', true);
+  });
+});
+
+// image is optional now: it can be chosen inside the headset
+function updateStart() { $('start').disabled = !arSupported; }
+
+// offline support + installable app
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+if (navigator.xr) {
+  navigator.xr.isSessionSupported('immersive-ar').then((ok) => {
+    arSupported = ok;
+    if (!ok) setStatus('Passthrough AR is not supported here. Open this page in the Meta Quest Browser.');
+    updateStart();
+  });
+} else {
+  setStatus('WebXR is not available. Open this page in the Meta Quest Browser via localhost or HTTPS.');
+}
+
+// =====================================================================
+// SURFACE BUILDER (pure math, no three.js) — BEGIN
+// points: array of {p:[x,y,z], n:[x,y,z]} in world space
+// rightHint: [x,y,z] a world direction for the image's "right"
+// viewer:    [x,y,z] head position (normal is flipped to face it)
+// returns { frame: 16-float column-major matrix (local->world), positions, pcs, indices, nx, ny } or null
+// poly (optional): lasso outline as world points [[x,y,z],...]; the mesh is clipped to it
+function buildSurface(points, rightHint, viewer, poly = null) {
+  if (points.length < (poly ? 3 : 20)) return null;
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+  // centroid + average normal
+  let c = [0, 0, 0], n = [0, 0, 0];
+  for (const q of points) { c = add(c, q.p); n = add(n, q.n); }
+  c = mul(c, 1 / points.length);
+  n = norm(n);
+  if (dot(n, sub(viewer, c)) < 0) n = mul(n, -1);
+
+  // projector frame: Z = normal (towards viewer), X = right, Y = Z x X
+  let x = sub(rightHint, mul(n, dot(rightHint, n)));
+  if (Math.hypot(...x) < 1e-3) x = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1];
+  x = norm(sub(x, mul(n, dot(x, n))));
+  const y = cross(n, x);
+
+  // to local
+  const L = points.map((q) => { const d = sub(q.p, c); return [dot(d, x), dot(d, y), dot(d, n)]; });
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const P = poly ? poly.map((p) => { const d = sub(p, c); return [dot(d, x), dot(d, y)]; }) : null;
+  for (const l of (P ? P : L)) { minX = Math.min(minX, l[0]); maxX = Math.max(maxX, l[0]); minY = Math.min(minY, l[1]); maxY = Math.max(maxY, l[1]); }
+  const margin = P ? 0.01 : 0.02;
+  minX -= margin; maxX += margin; minY -= margin; maxY += margin;
+  const extent = Math.max(maxX - minX, maxY - minY);
+  const step = Math.max(0.005, extent / 80);
+  const nx = Math.max(2, Math.ceil((maxX - minX) / step) + 1);
+  const ny = Math.max(2, Math.ceil((maxY - minY) / step) + 1);
+  const N = nx * ny;
+
+  // bin to nearest node, median height per node
+  const bins = new Array(N);
+  for (const l of L) {
+    const i = Math.round((l[0] - minX) / step), j = Math.round((l[1] - minY) / step);
+    if (i < 0 || j < 0 || i >= nx || j >= ny) continue;
+    const k = j * nx + i;
+    (bins[k] || (bins[k] = [])).push(l[2]);
+  }
+  const h = new Float32Array(N);
+  const has = new Uint8Array(N);
+  for (let k = 0; k < N; k++) {
+    const b = bins[k];
+    if (!b) continue;
+    b.sort((a, b) => a - b);
+    h[k] = b[b.length >> 1];
+    has[k] = 1;
+  }
+
+  const valid = new Uint8Array(N);
+  if (P) {
+    // valid = inside the lasso (or within one grid step of its edge)
+    const inside = (px, py) => {
+      let ins = false;
+      for (let a = 0, b = P.length - 1; a < P.length; b = a++) {
+        const [xa, ya] = P[a], [xb, yb] = P[b];
+        if ((ya > py) !== (yb > py) && px < ((xb - xa) * (py - ya)) / (yb - ya) + xa) ins = !ins;
+      }
+      return ins;
+    };
+    const edgeDist = (px, py) => {
+      let best = Infinity;
+      for (let a = 0, b = P.length - 1; a < P.length; b = a++) {
+        const [xa, ya] = P[b], [xb, yb] = P[a];
+        const dx = xb - xa, dy = yb - ya, l2 = dx * dx + dy * dy || 1e-9;
+        const t = Math.max(0, Math.min(1, ((px - xa) * dx + (py - ya) * dy) / l2));
+        best = Math.min(best, Math.hypot(px - xa - t * dx, py - ya - t * dy));
+      }
+      return best;
+    };
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const X = minX + i * step, Y = minY + j * step;
+      if (inside(X, Y) || edgeDist(X, Y) < step * 0.5) valid[j * nx + i] = 1;
+    }
+  }
+  // no lasso: valid = within ~2.5 cm of a sample
+  const R = Math.max(1, Math.round(0.025 / step));
+  if (!P) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    if (!has[j * nx + i]) continue;
+    for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) {
+      const ii = i + di, jj = j + dj;
+      if (ii >= 0 && jj >= 0 && ii < nx && jj < ny && di * di + dj * dj <= R * R) valid[jj * nx + ii] = 1;
+    }
+  }
+
+  // fill holes inside the valid area from neighbours
+  const filled = has.slice();
+  for (let pass = 0; pass < 200; pass++) {
+    let changed = 0;
+    const nf = filled.slice();
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const k = j * nx + i;
+      if (!valid[k] || filled[k]) continue;
+      let s = 0, cnt = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const ii = i + di, jj = j + dj;
+        if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+        const kk = jj * nx + ii;
+        if (filled[kk]) { s += h[kk]; cnt++; }
+      }
+      if (cnt) { h[k] = s / cnt; nf[k] = 1; changed++; }
+    }
+    filled.set(nf);
+    if (!changed) break;
+  }
+
+  // smooth (depth data is noisy)
+  for (let pass = 0; pass < 3; pass++) {
+    const h2 = h.slice();
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const k = j * nx + i;
+      if (!filled[k]) continue;
+      let s = 0, cnt = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const ii = i + di, jj = j + dj;
+        if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+        const kk = jj * nx + ii;
+        if (filled[kk]) { s += h[kk]; cnt++; }
+      }
+      h2[k] = s / cnt;
+    }
+    h.set(h2);
+  }
+
+  const positions = new Float32Array(N * 3);
+  const pcs = new Float32Array(N * 2);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const k = j * nx + i, X = minX + i * step, Y = minY + j * step;
+    positions[k * 3] = X; positions[k * 3 + 1] = Y; positions[k * 3 + 2] = h[k];
+    pcs[k * 2] = X; pcs[k * 2 + 1] = Y;
+  }
+  const idx = [];
+  for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const a = j * nx + i, b = a + 1, d = a + nx, e = d + 1;
+    const ok = (k) => filled[k] && valid[k];
+    if (ok(a) && ok(b) && ok(d) && ok(e)) idx.push(a, b, e, a, e, d);
+  }
+  if (!idx.length) return null;
+  const frame = [x[0], x[1], x[2], 0, y[0], y[1], y[2], 0, n[0], n[1], n[2], 0, c[0], c[1], c[2], 1];
+  return { frame, positions, pcs, indices: idx, nx, ny, step };
+}
+
+// flat square surface at a hit point
+function flatSurface(p, nrm, rightHint, size = 1.2, step = 0.05) {
+  const pts = [];
+  // synthesize a dense flat patch so buildSurface handles framing
+  const n = nrm;
+  let x = [rightHint[0] - n[0] * (rightHint[0] * n[0] + rightHint[1] * n[1] + rightHint[2] * n[2]),
+           rightHint[1] - n[1] * (rightHint[0] * n[0] + rightHint[1] * n[1] + rightHint[2] * n[2]),
+           rightHint[2] - n[2] * (rightHint[0] * n[0] + rightHint[1] * n[1] + rightHint[2] * n[2])];
+  let l = Math.hypot(...x);
+  if (l < 1e-3) { x = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1]; l = 1; }
+  x = x.map((v) => v / l);
+  const y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]];
+  const half = size / 2;
+  for (let a = -half; a <= half + 1e-6; a += step) for (let b = -half; b <= half + 1e-6; b += step)
+    pts.push({ p: [p[0] + x[0] * a + y[0] * b, p[1] + x[1] * a + y[1] * b, p[2] + x[2] * a + y[2] * b], n });
+  const viewer = [p[0] + n[0], p[1] + n[1], p[2] + n[2]];
+  return buildSurface(pts, x, viewer);
+}
+// ---- outlines from detected objects ----
+// m: 16-float column-major local->world matrix (rigid)
+function xform(m, x, y, z) {
+  return [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
+}
+function xdir(m, x, y, z) {
+  const v = [m[0] * x + m[4] * y + m[8] * z, m[1] * x + m[5] * y + m[9] * z, m[2] * x + m[6] * y + m[10] * z];
+  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+}
+// XRPlane polygon (plane space, y = 0) -> world outline; plane normal = local +Y
+function planeOutline(polygon, m) {
+  const pts = polygon.map((q) => xform(m, q.x, q.y, q.z));
+  // drop duplicated closing point
+  if (pts.length > 2 && Math.hypot(pts[0][0] - pts.at(-1)[0], pts[0][1] - pts.at(-1)[1], pts[0][2] - pts.at(-1)[2]) < 1e-4) pts.pop();
+  return { pts, n: xdir(m, 0, 1, 0) };
+}
+// 2D convex hull (monotone chain) -> indices
+function hull2D(P) {
+  const idx = P.map((_, i) => i).sort((a, b) => P[a][0] - P[b][0] || P[a][1] - P[b][1]);
+  const cr = (o, a, b) => (P[a][0] - P[o][0]) * (P[b][1] - P[o][1]) - (P[a][1] - P[o][1]) * (P[b][0] - P[o][0]);
+  const lo = [], up = [];
+  for (const i of idx) { while (lo.length >= 2 && cr(lo.at(-2), lo.at(-1), i) <= 0) lo.pop(); lo.push(i); }
+  for (const i of idx.slice().reverse()) { while (up.length >= 2 && cr(up.at(-2), up.at(-1), i) <= 0) up.pop(); up.push(i); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+// XRMesh: the connected patch of faces facing the same way as the face that was hit -> outline
+function meshFaceOutline(vertices, indices, faceIndex, m, maxAngleDeg = 35) {
+  const T = indices.length / 3;
+  if (faceIndex < 0 || faceIndex >= T) return null;
+  const fn = new Float32Array(T * 3);
+  for (let t = 0; t < T; t++) {
+    const a = indices[3 * t] * 3, b = indices[3 * t + 1] * 3, c = indices[3 * t + 2] * 3;
+    const ux = vertices[b] - vertices[a], uy = vertices[b + 1] - vertices[a + 1], uz = vertices[b + 2] - vertices[a + 2];
+    const vx = vertices[c] - vertices[a], vy = vertices[c + 1] - vertices[a + 1], vz = vertices[c + 2] - vertices[a + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    fn[3 * t] = nx / l; fn[3 * t + 1] = ny / l; fn[3 * t + 2] = nz / l;
+  }
+  const vf = new Map();   // vertex -> faces
+  for (let t = 0; t < T; t++) for (let k = 0; k < 3; k++) {
+    const v = indices[3 * t + k];
+    (vf.get(v) || vf.set(v, []).get(v)).push(t);
+  }
+  const cosMax = Math.cos(maxAngleDeg * Math.PI / 180);
+  const n0 = [fn[3 * faceIndex], fn[3 * faceIndex + 1], fn[3 * faceIndex + 2]];
+  const seen = new Uint8Array(T), stack = [faceIndex], verts = new Set();
+  seen[faceIndex] = 1;
+  while (stack.length) {
+    const t = stack.pop();
+    for (let k = 0; k < 3; k++) {
+      const v = indices[3 * t + k];
+      verts.add(v);
+      for (const u of vf.get(v)) {
+        if (seen[u]) continue;
+        if (fn[3 * u] * n0[0] + fn[3 * u + 1] * n0[1] + fn[3 * u + 2] * n0[2] < cosMax) continue;
+        seen[u] = 1; stack.push(u);
+      }
+    }
+  }
+  const nW = xdir(m, n0[0], n0[1], n0[2]);
+  const W = [...verts].map((v) => xform(m, vertices[3 * v], vertices[3 * v + 1], vertices[3 * v + 2]));
+  if (W.length < 3) return null;
+  // 2D basis on the patch plane
+  let ax = Math.abs(nW[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const d0 = ax[0] * nW[0] + ax[1] * nW[1] + ax[2] * nW[2];
+  let u = [ax[0] - nW[0] * d0, ax[1] - nW[1] * d0, ax[2] - nW[2] * d0];
+  const lu = Math.hypot(...u); u = u.map((x) => x / lu);
+  const w = [nW[1] * u[2] - nW[2] * u[1], nW[2] * u[0] - nW[0] * u[2], nW[0] * u[1] - nW[1] * u[0]];
+  const P = W.map((p) => [p[0] * u[0] + p[1] * u[1] + p[2] * u[2], p[0] * w[0] + p[1] * w[1] + p[2] * w[2]]);
+  let h = hull2D(P);
+  // simplify: drop nearly-straight corners
+  for (let pass = 0; pass < 3 && h.length > 4; pass++) {
+    h = h.filter((i, k) => {
+      const a = P[h[(k - 1 + h.length) % h.length]], b = P[i], c = P[h[(k + 1) % h.length]];
+      const x1 = b[0] - a[0], y1 = b[1] - a[1], x2 = c[0] - b[0], y2 = c[1] - b[1];
+      const ang = Math.abs(Math.atan2(x1 * y2 - y1 * x2, x1 * x2 + y1 * y2));
+      return ang > 0.14 || h.length <= 4;
+    });
+  }
+  return { pts: h.map((i) => W[i]), n: nW };
+}
+// SURFACE BUILDER — END
+// =====================================================================
+
+// ---------- 3D scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x000000, 0);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, 1, 0.01, 20);
+
+const reticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.008, 0.014, 24).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x4fa3ff, depthTest: false })
+);
+reticle.matrixAutoUpdate = false;
+reticle.renderOrder = 5;
+reticle.visible = false;
+scene.add(reticle);
+
+// scan point cloud
+const MAX_PTS = 20000;
+const scanPts = [];
+const scanKeys = new Set();
+const ptBuf = new Float32Array(MAX_PTS * 3);
+const ptGeo = new THREE.BufferGeometry();
+ptGeo.setAttribute('position', new THREE.BufferAttribute(ptBuf, 3));
+ptGeo.setDrawRange(0, 0);
+const ptCloud = new THREE.Points(ptGeo, new THREE.PointsMaterial({ color: 0x3fe0ff, size: 0.005, sizeAttenuation: true }));
+ptCloud.frustumCulled = false;
+scene.add(ptCloud);
+
+// lasso: dots + connecting lines (+ rubber band to the pointer)
+const MAX_LASSO = 1500;
+const lassoPts = [];           // [{p:[x,y,z], n:[x,y,z]}]
+let lassoClosed = false;
+const lassoLineBuf = new Float32Array((MAX_LASSO + 2) * 3);
+const lassoLineGeo = new THREE.BufferGeometry();
+lassoLineGeo.setAttribute('position', new THREE.BufferAttribute(lassoLineBuf, 3));
+lassoLineGeo.setDrawRange(0, 0);
+const lassoLine = new THREE.Line(lassoLineGeo, new THREE.LineBasicMaterial({ color: 0xffd23f, depthTest: false }));
+lassoLine.frustumCulled = false;
+lassoLine.renderOrder = 6;
+scene.add(lassoLine);
+const lassoDotBuf = new Float32Array(MAX_LASSO * 3);
+const lassoDotGeo = new THREE.BufferGeometry();
+lassoDotGeo.setAttribute('position', new THREE.BufferAttribute(lassoDotBuf, 3));
+lassoDotGeo.setDrawRange(0, 0);
+const lassoDots = new THREE.Points(lassoDotGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.007, depthTest: false }));
+lassoDots.frustumCulled = false;
+lassoDots.renderOrder = 7;
+scene.add(lassoDots);
+const startMarker = new THREE.Mesh(new THREE.SphereGeometry(0.009, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffd23f, depthTest: false }));
+startMarker.renderOrder = 8;
+startMarker.visible = false;
+scene.add(startMarker);
+const SNAP = 0.03;   // closing distance to the first dot (m)
+
+// ---------- detected objects (from the headset's room setup) ----------
+const detGroup = new THREE.Group();
+detGroup.visible = false;
+scene.add(detGroup);
+const detObjs = new Map();   // XRPlane | XRMesh -> { kind, label, changed, mesh, edges }
+let detHover = null;         // { entry, point:Vector3, faceIndex }
+let detPickSrc = null;
+let detMsg = '';
+let detAvailable = null;     // null = unknown, false = feature not granted
+let roomCaptureTried = false;
+const DET_COLORS = [0x4fa3ff, 0xffb347, 0x7dff9a, 0xff7dd8, 0xc59bff, 0x5ce1e6, 0xffe066, 0xff8a65];
+const labelColor = (l) => { let h = 0; for (const ch of l) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return DET_COLORS[h % DET_COLORS.length]; };
+const prettyLabel = (l) => (l || 'object').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+// floating name tag for the object under the pointer
+const tagCanvas = document.createElement('canvas');
+tagCanvas.width = 384; tagCanvas.height = 96;
+const tagTex = new THREE.CanvasTexture(tagCanvas);
+tagTex.colorSpace = THREE.SRGBColorSpace;
+const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.03),
+  new THREE.MeshBasicMaterial({ map: tagTex, transparent: true, depthTest: false, depthWrite: false }));
+tag.renderOrder = 9;
+tag.visible = false;
+scene.add(tag);
+let tagText = '';
+function setTag(text) {
+  if (text === tagText) return;
+  tagText = text;
+  const c = tagCanvas.getContext('2d');
+  c.clearRect(0, 0, 384, 96);
+  c.fillStyle = 'rgba(15,20,30,0.85)';
+  c.beginPath(); c.roundRect ? c.roundRect(2, 2, 380, 92, 30) : c.rect(2, 2, 380, 92); c.fill();
+  c.fillStyle = '#fff'; c.font = 'bold 44px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(text, 192, 50);
+  tagTex.needsUpdate = true;
+}
+
+function makeDetGeometry(obj, kind) {
+  const g = new THREE.BufferGeometry();
+  if (kind === 'plane') {
+    const poly = obj.polygon.map((p) => new THREE.Vector2(p.x, p.z));
+    if (poly.length > 2 && poly[0].distanceTo(poly.at(-1)) < 1e-4) poly.pop();
+    const tris = THREE.ShapeUtils.triangulateShape(poly, []);
+    const pos = new Float32Array(poly.length * 3);
+    poly.forEach((p, i) => { pos[i * 3] = p.x; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = p.y; });
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setIndex(tris.flat());
+  } else {
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(obj.vertices), 3));
+    g.setIndex(new THREE.BufferAttribute(new Uint32Array(obj.indices), 1));
+  }
+  g.computeBoundingSphere();
+  return g;
+}
+
+function updateDetections(frame, ref) {
+  const show = mode === 'scan' && scanTool === 'detect';
+  detGroup.visible = show;
+  if (!show) { tag.visible = false; detHover = null; return; }
+  const planes = frame.detectedPlanes, meshes = frame.detectedMeshes;
+  if (planes === undefined && meshes === undefined) { detAvailable = false; return; }
+  detAvailable = true;
+  const live = new Set();
+  const visit = (obj, kind) => {
+    const label = obj.semanticLabel || (kind === 'plane' ? (obj.orientation === 'vertical' ? 'wall' : 'surface') : 'object');
+    if (/global.?mesh/i.test(label)) return;      // the whole-room scan is not an object
+    live.add(obj);
+    let e = detObjs.get(obj);
+    if (!e || e.changed !== obj.lastChangedTime) {
+      if (e) { detGroup.remove(e.mesh); e.mesh.geometry.dispose(); }
+      let geo;
+      try { geo = makeDetGeometry(obj, kind); } catch { return; }
+      const color = labelColor(label);
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16,
+        side: THREE.DoubleSide, depthWrite: false }));
+      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 })));
+      mesh.matrixAutoUpdate = false;
+      mesh.renderOrder = 3;
+      mesh.userData.obj = obj;
+      detGroup.add(mesh);
+      e = { kind, label, changed: obj.lastChangedTime, mesh };
+      detObjs.set(obj, e);
+    }
+    const pose = frame.getPose(kind === 'plane' ? obj.planeSpace : obj.meshSpace, ref);
+    if (pose) { e.mesh.matrix.fromArray(pose.transform.matrix); e.mesh.visible = true; }
+    else e.mesh.visible = false;
+  };
+  if (planes) planes.forEach((p) => visit(p, 'plane'));
+  if (meshes) meshes.forEach((m) => visit(m, 'mesh'));
+  for (const [obj, e] of detObjs) if (!live.has(obj)) { detGroup.remove(e.mesh); e.mesh.geometry.dispose(); detObjs.delete(obj); }
+  detGroup.updateMatrixWorld(true);
+}
+
+// ray from an input source against the detected objects
+function detRaycast(src, frame, ref) {
+  const p = frame.getPose(src.targetRaySpace, ref);
+  if (!p) return null;
+  tmpM.fromArray(p.transform.matrix);
+  raycaster.set(new THREE.Vector3().setFromMatrixPosition(tmpM), new THREE.Vector3(0, 0, -1).transformDirection(tmpM));
+  const hits = raycaster.intersectObjects(detGroup.children.filter((m) => m.visible), false);
+  if (!hits.length) return null;
+  const h = hits[0];
+  return { entry: detObjs.get(h.object.userData.obj), obj: h.object.userData.obj, point: h.point, faceIndex: h.faceIndex };
+}
+
+// selected object -> outline -> editable lasso
+function outlineFromHit(hit) {
+  const m = hit.entry.mesh.matrix.elements;
+  if (hit.entry.kind === 'plane') return planeOutline(hit.obj.polygon, m);
+  return meshFaceOutline(hit.obj.vertices, hit.obj.indices, hit.faceIndex, m);
+}
+
+// mapped surface (frame = projector pose)
+const surface = new THREE.Group();
+surface.matrixAutoUpdate = false;
+surface.visible = false;
+scene.add(surface);
+
+const imgUniforms = {
+  map: { value: null },
+  opacity: { value: 0.5 },
+  center: { value: new THREE.Vector2() },
+  rot: { value: 0 },
+  size: { value: new THREE.Vector2(0.21, 0.3) },
+  border: { value: 1 },
+};
+const imgMat = new THREE.ShaderMaterial({
+  uniforms: imgUniforms,
+  transparent: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  vertexShader: `
+    attribute vec2 pc;
+    varying vec2 vPc;
+    void main() {
+      vPc = pc;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform sampler2D map;
+    uniform float opacity;
+    uniform vec2 center;
+    uniform float rot;
+    uniform vec2 size;
+    uniform float border;
+    varying vec2 vPc;
+    void main() {
+      vec2 d = vPc - center;
+      float c = cos(rot), s = sin(rot);
+      vec2 r = vec2(c * d.x + s * d.y, -s * d.x + c * d.y);
+      vec2 uv = r / size + 0.5;
+      if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) discard;
+      vec4 col = texture2D(map, uv);
+      vec2 e = min(uv, 1.0 - uv) * size;
+      if (border > 0.5 && min(e.x, e.y) < 0.003) col = vec4(0.06, 0.37, 1.0, 1.0);
+      gl_FragColor = vec4(col.rgb, col.a * opacity);
+      #include <colorspace_fragment>
+    }`,
+});
+const wireMat = new THREE.MeshBasicMaterial({ color: 0x4fa3ff, wireframe: true, transparent: true, opacity: 0.12, depthWrite: false });
+let imgMesh = null, wireMesh = null;
+
+function setSurface(s) {
+  if (imgMesh) { surface.remove(imgMesh); surface.remove(wireMesh); imgMesh.geometry.dispose(); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(s.positions, 3));
+  g.setAttribute('pc', new THREE.BufferAttribute(s.pcs, 2));
+  g.setIndex(s.indices);
+  g.computeBoundingSphere();
+  imgMesh = new THREE.Mesh(g, imgMat);
+  imgMesh.renderOrder = 2;
+  imgMesh.frustumCulled = false;
+  wireMesh = new THREE.Mesh(g, wireMat);
+  wireMesh.renderOrder = 1;
+  wireMesh.frustumCulled = false;
+  imgMesh.visible = !!img.texture;
+  surface.add(wireMesh, imgMesh);
+  surface.matrix.fromArray(s.frame);
+  surface.updateMatrixWorld(true);
+  surface.visible = true;
+}
+
+// ---------- floating control panel ----------
+const PW = 768, PH = 560;
+const PANEL_W = 0.40;
+const PANEL_H = PANEL_W * PH / PW;
+const canvas = document.createElement('canvas');
+canvas.width = PW; canvas.height = PH;
+const ctx = canvas.getContext('2d');
+const panelTex = new THREE.CanvasTexture(canvas);
+panelTex.colorSpace = THREE.SRGBColorSpace;
+const panel = new THREE.Mesh(
+  new THREE.PlaneGeometry(PANEL_W, PANEL_H),
+  new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, depthTest: false, depthWrite: false })
+);
+panel.renderOrder = 10;
+panel.visible = false;
+scene.add(panel);
+
+// small "Show panel" chip: floats above the left controller (or low-left in view)
+const chipCanvas = document.createElement('canvas');
+chipCanvas.width = 320; chipCanvas.height = 110;
+const chipTex = new THREE.CanvasTexture(chipCanvas);
+chipTex.colorSpace = THREE.SRGBColorSpace;
+const chip = new THREE.Mesh(new THREE.PlaneGeometry(0.096, 0.033),
+  new THREE.MeshBasicMaterial({ map: chipTex, transparent: true, depthTest: false, depthWrite: false }));
+chip.renderOrder = 12;
+chip.visible = false;
+scene.add(chip);
+const CHIP_BTN = { id: 'show', label: 'Show panel', kind: 'tap', group: 'always' };
+let chipHover = null;
+function drawChip(hover) {
+  if (chipHover === hover) return;
+  chipHover = hover;
+  const c = chipCanvas.getContext('2d');
+  c.clearRect(0, 0, 320, 110);
+  c.fillStyle = hover ? '#4fa3ff' : 'rgba(30,40,60,0.9)';
+  c.beginPath(); c.roundRect ? c.roundRect(4, 4, 312, 102, 40) : c.rect(4, 4, 312, 102); c.fill();
+  c.strokeStyle = '#4fa3ff'; c.lineWidth = 4; c.stroke();
+  c.fillStyle = hover ? '#001b33' : '#fff';
+  c.font = 'bold 40px system-ui, sans-serif';
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText('Show panel', 160, 57);
+  chipTex.needsUpdate = true;
+}
+drawChip(false);
+function setPanelHidden(v) {
+  panelHidden = v;
+  panel.visible = !v && !!session;
+  chip.visible = v && !!session;
+  hoverBtn.clear(); activeBtn.clear();
+  panelKey = '';
+}
+
+// kind: 'tap' once, 'repeat' repeats while held, 'hold' continuous
+const mk = (list) => (id, label, x, y, w, h, kind, group) => list.push({ id, label, x, y, w, h, kind, group });
+const BTN_SCAN = [], BTN_MAP = [];
+{
+  const a = mk(BTN_SCAN);
+  a('undo', 'Undo', 20, 200, 230, 90, 'repeat', 'undo');
+  a('clear', 'Clear', 270, 200, 230, 90, 'tap', 'scanidle');
+  a('done', 'Done', 520, 200, 228, 90, 'tap', 'enough');
+  a('room', 'Room setup', 20, 200, 300, 90, 'tap', 'scanidle');
+  a('t-lasso', 'Lasso', 20, 322, 175, 80, 'tap', 'scanidle');
+  a('t-sweep', 'Sweep', 203, 322, 175, 80, 'tap', 'scanidle');
+  a('t-detect', 'Detect', 386, 322, 175, 80, 'tap', 'scanidle');
+  a('t-flat', 'Quick flat', 569, 322, 179, 80, 'tap', 'scanidle');
+  a('image', 'Image', 20, 465, 175, 80, 'tap', 'always');
+  a('steady', 'Steady', 203, 465, 175, 80, 'tap', 'always');
+  a('hide', 'Hide', 386, 465, 175, 80, 'tap', 'always');
+  a('quit', 'Quit', 569, 465, 179, 80, 'tap', 'always');
+}
+const BTN_PICK = [];
+{
+  const a = mk(BTN_PICK);
+  for (let i = 0; i < 6; i++) a('tile' + i, '', 20 + (i % 3) * 244, 70 + Math.floor(i / 3) * 190, 232, 180, 'tap', 'tile');
+  a('prev', 'Prev', 20, 465, 170, 80, 'tap', 'prev');
+  a('next', 'Next', 200, 465, 170, 80, 'tap', 'next');
+  a('refresh', 'Refresh', 380, 465, 170, 80, 'tap', 'always');
+  a('back', 'Back', 560, 465, 188, 80, 'tap', 'always');
+}
+{
+  const a = mk(BTN_MAP);
+  a('op-', '−', 150, 70, 110, 80, 'repeat', 'always');
+  a('op+', '+', 400, 70, 110, 80, 'repeat', 'always');
+  [['mv-l', 'Left'], ['mv-r', 'Right'], ['mv-u', 'Up'], ['mv-d', 'Down']].forEach(([id, l], i) =>
+    a(id, l, 20 + i * 183, 190, 175, 80, 'hold', 'adjust'));
+  a('sz-', 'Size −', 20, 290, 175, 70, 'hold', 'adjust');
+  a('sz+', 'Size +', 203, 290, 175, 70, 'hold', 'adjust');
+  a('rt-', 'Turn left', 386, 290, 175, 70, 'hold', 'adjust');
+  a('rt+', 'Turn right', 569, 290, 179, 70, 'hold', 'adjust');
+  a('lock', 'Lock', 20, 375, 230, 80, 'tap', 'always');
+  a('reset', 'Reset', 258, 375, 150, 80, 'tap', 'adjust');
+  a('lay', 'Lay flat', 416, 375, 150, 80, 'tap', 'free');
+  a('rescan', 'Rescan', 574, 375, 174, 80, 'tap', 'adjust');
+  a('grab', 'Grab', 20, 465, 175, 80, 'tap', 'always');
+  a('image', 'Image', 203, 465, 175, 80, 'tap', 'adjust');
+  a('hide', 'Hide', 386, 465, 175, 80, 'tap', 'always');
+  a('quit', 'Quit', 569, 465, 179, 80, 'tap', 'always');
+}
+// per-tool visibility in the scan panel
+const SCAN_ONLY = { room: ['detect'], undo: ['lasso', 'sweep', 'flat'], clear: ['lasso', 'sweep', 'flat'], done: ['lasso', 'sweep', 'flat'] };
+const buttons = () => (mode === 'scan' ? BTN_SCAN.filter((b) => !SCAN_ONLY[b.id] || SCAN_ONLY[b.id].includes(scanTool))
+                     : mode === 'pick' ? BTN_PICK : BTN_MAP);
+
+function btnEnabled(b) {
+  if (b.group === 'always') return true;
+  if (b.group === 'scanidle') return !sampling;
+  if (b.group === 'free') return freeMode && !locked;
+  if (b.group === 'undo') return !sampling && scanTool === 'lasso' && lassoPts.length > 0;
+  if (b.group === 'enough') return !sampling && (scanTool === 'lasso' ? lassoPts.length >= 3 : scanTool === 'sweep' ? scanPts.length >= 40 : false);
+  if (b.group === 'tile') return !!galleryItem(+b.id.slice(4));
+  if (b.group === 'prev') return galleryPage > 0;
+  if (b.group === 'next') return (galleryPage + 1) * 6 < gallery.length;
+  return !locked;
+}
+
+// ---------- in-headset image gallery ----------
+// sources: images picked on the page + the "images" folder next to this file on the PC
+let gallery = [];
+let galleryPage = 0;
+let galleryMsg = '';
+let thumbRev = 0;
+const thumbs = new Map();   // url -> HTMLImageElement (loaded) | 'err'
+const IMG_RE = /\.(jpe?g|png|webp|gif|bmp)$/i;
+function galleryItem(i) { return gallery[galleryPage * 6 + i] || null; }
+async function refreshGallery() {
+  galleryMsg = 'Loading…';
+  thumbRev++;
+  await libRefresh();
+  const items = [...localItems];
+  try {
+    const res = await fetch('images/', { cache: 'no-store' });
+    if (res.ok) {
+      const html = await res.text();
+      for (const m of html.matchAll(/href="([^"?#]+)"/g)) {
+        const href = m[1];
+        if (!IMG_RE.test(href)) continue;
+        items.push({ url: new URL(href, location.href.replace(/[^/]*$/, '') + 'images/').href, name: decodeURIComponent(href.split('/').pop()) });
+      }
+    }
+  } catch {}
+  gallery = items;
+  galleryPage = Math.min(galleryPage, Math.max(0, Math.ceil(gallery.length / 6) - 1));
+  galleryMsg = gallery.length ? '' : 'No images yet. Quit, choose images on the start page (they are saved in the app), then come back to Image.';
+  thumbRev++;
+  loadPageThumbs();
+}
+function loadPageThumbs() {
+  for (let i = 0; i < 6; i++) {
+    const it = galleryItem(i);
+    if (!it || thumbs.has(it.url)) continue;
+    const im = new Image();
+    thumbs.set(it.url, null);
+    im.onload = () => { thumbs.set(it.url, im); thumbRev++; };
+    im.onerror = () => { thumbs.set(it.url, 'err'); thumbRev++; };
+    im.src = it.url;
+  }
+}
+let pickReturn = 'scan';
+function openPicker() {
+  pickReturn = mode;
+  mode = 'pick';
+  hoverBtn.clear(); activeBtn.clear();
+  scanning.clear();
+  grab = null;
+  refreshGallery();
+}
+function closePicker() {
+  mode = pickReturn;
+  hoverBtn.clear(); activeBtn.clear();
+}
+function chooseTile(i) {
+  const it = galleryItem(i);
+  if (!it) return;
+  galleryMsg = 'Loading ' + it.name + '…';
+  thumbRev++;
+  loadImage(it.url, it.name, (ok) => {
+    if (!ok) { galleryMsg = 'Could not load ' + it.name; thumbRev++; return; }
+    imgUniforms.map.value = img.texture;
+    resetAdjust();
+    if (imgMesh) imgMesh.visible = true;
+    galleryMsg = '';
+    closePicker();
+  });
+}
+function drawImageFit(im, x, y, w, h) {
+  const s = Math.min(w / im.width, h / im.height);
+  const dw = im.width * s, dh = im.height * s;
+  ctx.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+}
+
+function layIsFlat() {
+  return new THREE.Vector3(0, 0, 1).applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(surface.matrix)).y > 0.9;
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+let panelKey = '';
+function drawPanel() {
+  const hovered = new Set([...hoverBtn.values()].filter(Boolean));
+  const pressedIds = new Set([...activeBtn.values()].map((a) => a.btn.id));
+  const key = [mode, detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
+    thumbRev, galleryPage, img.name, gallery.length,
+    [...hovered].map((b) => b.id).join(), [...pressedIds].join()].join('|');
+  if (key === panelKey) return;
+  panelKey = key;
+
+  ctx.clearRect(0, 0, PW, PH);
+  ctx.fillStyle = 'rgba(18,18,22,0.88)';
+  roundRect(0, 0, PW, PH, 28); ctx.fill();
+  ctx.textBaseline = 'middle';
+
+  let status;
+  if (mode === 'scan') {
+    status = sampling ? 'Mapping the surface… hold still'
+           : scanTool === 'lasso' && lassoEdit ? 'Step 1 · Fine-tune the outline'
+           : scanTool === 'detect' ? 'Step 1 · Pick a detected object'
+           : scanTool === 'lasso' ? 'Step 1 · Draw around the area (lasso)'
+           : scanTool === 'sweep' ? 'Step 1 · Sweep over the surface'
+           : 'Step 1 · Tap the trigger on the flat surface';
+  } else if (mode === 'pick') {
+    const pages = Math.max(1, Math.ceil(gallery.length / 6));
+    status = 'Choose an image' + (gallery.length ? `  ·  page ${galleryPage + 1}/${pages}` : '');
+  } else {
+    status = !img.texture ? 'Press Image to choose a picture'
+           : freeMode && !locked ? (grab ? 'Carrying · release trigger to drop' : 'Hold trigger to carry the image · then Lock')
+           : locked ? 'LOCKED · trace away'
+           : grab ? 'Sliding · release trigger to drop'
+           : grabMode ? 'Step 2 · Hold trigger on surface to slide image'
+           : 'Step 2 · Position the image, then Lock';
+  }
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 30px system-ui, sans-serif';
+  ctx.fillStyle = locked ? '#7dff9a' : '#ffd27d';
+  ctx.fillText(status, 24, 34);
+
+  if (mode === 'scan') {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 40px system-ui, sans-serif';
+    const big = sampling ? `Measuring ${sampling.got}/${sampling.total}`
+              : scanTool === 'lasso' ? lassoPts.length + ' dots'
+              : scanTool === 'sweep' ? scanPts.length + ' points'
+              : scanTool === 'detect' ? detObjs.size + (detObjs.size === 1 ? ' object found' : ' objects found')
+              : 'Quick flat';
+    ctx.fillText(big, 24, 105);
+    ctx.fillStyle = snapNow ? '#7dff9a' : '#9a9a9a';
+    ctx.font = '25px system-ui, sans-serif';
+    const hint = sampling ? 'Keep hands and controllers out of the area for a moment'
+               : detMsg && scanTool === 'detect' ? detMsg
+               : scanTool === 'detect'
+                 ? (detAvailable === false ? 'Object detection is not available here — allow spatial data when asked, or use Lasso'
+                   : !detObjs.size ? 'No objects yet. Press Room setup to scan your room, then come back to Detect'
+                   : detHover ? 'Pull the trigger to select: ' + prettyLabel(detHover.entry.label)
+                   : 'Point at an object (table, desk, wall…) and pull the trigger')
+               : scanTool === 'lasso' && lassoEdit
+                 ? 'Fine-tune: drag a dot · tap an edge to add one · Undo removes · Done to map'
+               : scanTool === 'lasso'
+                 ? (snapNow ? 'Pull the trigger now to close the shape'
+                   : lassoPts.length < 3 ? 'Tap to drop dots · hold and drag to draw freehand'
+                   : 'Tap near the first (yellow) dot or press Done to close')
+               : scanTool === 'sweep'
+                 ? (scanPts.length < 40 ? 'Hold trigger and sweep slowly over the surface' : 'Cover a little beyond where you will draw')
+               : 'Aim at the paper and tap once';
+    if (scanTool === 'detect' && (detMsg || detAvailable === false)) ctx.fillStyle = '#ffb347';
+    {   // wrap long hints onto two lines
+      const words = hint.split(' ');
+      let line = '', y = 145, lines = 0;
+      for (const w of words) {
+        if (ctx.measureText(line + w).width > 715 && line) { ctx.fillText(line, 24, y); line = ''; y += 30; lines++; }
+        line += w + ' ';
+      }
+      ctx.fillText(line, 24, y);
+    }
+    ctx.fillStyle = '#9a9a9a';
+    ctx.font = '22px system-ui, sans-serif';
+    ctx.fillText('Selection tool:', 24, 305);
+    ctx.textAlign = 'right';
+    ctx.font = '25px system-ui, sans-serif';
+    ctx.fillStyle = img.texture ? '#9fd4ff' : '#ffb347';
+    ctx.fillText(img.texture ? 'Image: ' + img.name.slice(0, 20) : 'No image yet', 500, 505);
+    ctx.textAlign = 'left';
+  } else if (mode === 'pick') {
+    if (galleryMsg) {
+      ctx.fillStyle = '#ffb347';
+      ctx.font = '26px system-ui, sans-serif';
+      const words = galleryMsg.split(' ');
+      let line = '', y = 445;
+      // wrap into the gap above the bottom buttons (or over the grid when empty)
+      if (!gallery.length) y = 160;
+      for (const w of words) {
+        if (ctx.measureText(line + w).width > 720) { ctx.fillText(line, 24, y); line = ''; y += 34; }
+        line += w + ' ';
+      }
+      ctx.fillText(line, 24, y);
+    }
+  } else {
+    ctx.fillStyle = '#bbb';
+    ctx.font = 'bold 28px system-ui, sans-serif';
+    ctx.fillText('Opacity', 24, 110);
+    ctx.fillText('Move · Size · Turn  (on the surface)', 24, 172);
+    const op = imgUniforms.opacity.value;
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 40px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(Math.round(op * 100) + '%', 330, 110);
+    ctx.fillStyle = '#333'; roundRect(530, 96, 218, 28, 14); ctx.fill();
+    ctx.fillStyle = '#4fa3ff'; roundRect(530, 96, 218 * op, 28, 14); ctx.fill();
+  }
+
+  ctx.textAlign = 'center';
+  for (const b of buttons()) {
+    const en = btnEnabled(b);
+    const hov = en && hovered.has(b);
+    let bg = en ? '#2e3440' : '#1f1f22';
+    if (hov) bg = '#3d4a60';
+    if (b.id === 'done' && en) bg = hov ? '#2c8a49' : '#1f6b35';
+    if (b.id === 't-' + scanTool) bg = hov ? '#2b6a8f' : '#1f4f6b';
+    if (b.id === 'lock') bg = locked ? '#1f6b35' : (hov ? '#5a4a1f' : '#4a3d1a');
+    if (b.id === 'grab' && grabMode && !hov) bg = '#1f4f6b';
+    if (b.id === 'quit') bg = hov ? '#8a2b2b' : '#5c1f1f';
+    if (en && pressedIds.has(b.id)) bg = '#4fa3ff';
+    if (b.group === 'tile') {
+      const it = galleryItem(+b.id.slice(4));
+      if (!it) continue;
+      const current = it.name === img.name;
+      ctx.fillStyle = current ? '#1f4f6b' : bg;
+      roundRect(b.x, b.y, b.w, b.h, 14); ctx.fill();
+      const th = thumbs.get(it.url);
+      if (th && th !== 'err') drawImageFit(th, b.x + 8, b.y + 8, b.w - 16, b.h - 46);
+      ctx.fillStyle = th === 'err' ? '#ff7d7d' : '#ddd';
+      ctx.font = '22px system-ui, sans-serif';
+      let nm = it.name;
+      while (nm.length > 4 && ctx.measureText(nm).width > b.w - 16) nm = nm.slice(0, -2);
+      if (nm !== it.name) nm = nm.slice(0, -1) + '…';
+      ctx.fillText(th === 'err' ? 'cannot load' : nm, b.x + b.w / 2, b.y + b.h - 20);
+      continue;
+    }
+    ctx.fillStyle = bg;
+    roundRect(b.x, b.y, b.w, b.h, 14); ctx.fill();
+    ctx.fillStyle = en ? '#fff' : '#555';
+    let fs = b.label.length <= 1 ? 52 : 30;
+    ctx.font = 'bold ' + fs + 'px system-ui, sans-serif';
+    const label = b.id === 'lock' ? (locked ? 'Unlock' : 'Lock')
+                : b.id === 'grab' ? 'Grab: ' + (grabMode ? 'On' : 'Off')
+                : b.id === 'done' && scanTool === 'lasso' ? 'Done (close)'
+                : b.id === 'steady' ? 'Steady: ' + STEADY[steadyLevel].name
+                : b.id === 'rescan' ? (freeMode ? 'Surface…' : lastLasso ? 'Edit shape' : 'Rescan')
+                : b.id === 'lay' ? (layIsFlat() ? 'Stand up' : 'Lay flat')
+                : b.label;
+    while (fs > 16 && ctx.measureText(label).width > b.w - 14) { fs -= 2; ctx.font = 'bold ' + fs + 'px system-ui, sans-serif'; }
+    ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
+  }
+  panelTex.needsUpdate = true;
+}
+
+function btnAt(uv) {
+  const px = uv.x * PW, py = (1 - uv.y) * PH;
+  return buttons().find((b) => px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) || null;
+}
+
+// ---------- session state ----------
+let session = null;
+let mode = 'scan';         // 'scan' | 'map'
+let scanTool = 'lasso';    // 'lasso' | 'sweep' | 'flat'
+let lassoDrawSrc = null;   // pointer currently drawing the lasso
+let lassoTap = false;      // a new press: always drop a dot this frame
+let lassoAim = null;       // latest hit under the drawing pointer
+let snapNow = false;       // pointer is close enough to the first dot to close
+let panelHidden = false;
+let lassoEdit = false;      // outline loaded from an object / previous shape: drag dots to fine-tune
+let lassoDrag = -1;         // index of the dot being dragged
+let lastLasso = null;       // outline used for the current surface (for "Edit shape")
+const DOT_GRAB = 0.022;     // how close the pointer must be to pick up a dot (m)
+
+// ---- aim stabiliser: smooths the surface pointer and ignores the trigger-pull twitch ----
+const STEADY = [   // One Euro filter: minCutoff (Hz) = stillness, beta = how fast it catches up when moving
+  { name: 'Low', minCutoff: 2.5, beta: 4, grab: 0.6 },
+  { name: 'Medium', minCutoff: 1.0, beta: 5, grab: 0.35 },
+  { name: 'High', minCutoff: 0.45, beta: 8, grab: 0.18 },
+];
+let steadyLevel = 2;
+try { const r = localStorage.getItem('traceAR.steady'); if (r !== null && +r >= 0 && +r <= 2) steadyLevel = +r; } catch {}
+const aimF = { src: null, p: null, prev: null, dx: new THREE.Vector3(), n: new THREE.Vector3(0, 1, 0), hist: [] };
+const euroAlpha = (cutoff, dt) => 1 / (1 + 1 / (2 * Math.PI * cutoff * Math.max(dt, 1 / 120)));
+function filterAim(src, rawP, rawN, dt, now) {
+  if (aimF.src !== src || !aimF.p || aimF.p.distanceTo(rawP) > 0.08) {   // new pointer or jumped to another surface
+    aimF.src = src; aimF.p = rawP.clone(); aimF.prev = rawP.clone(); aimF.dx.set(0, 0, 0);
+    aimF.n.copy(rawN); aimF.hist.length = 0;
+  } else {
+    const st = STEADY[steadyLevel], h = Math.max(dt, 1 / 120);
+    const v = rawP.clone().sub(aimF.prev).divideScalar(h);
+    aimF.prev.copy(rawP);
+    aimF.dx.lerp(v, euroAlpha(1.0, h));                       // smoothed speed
+    const a = euroAlpha(st.minCutoff + st.beta * aimF.dx.length(), h);
+    aimF.p.lerp(rawP, a);
+    aimF.n.lerp(rawN, a).normalize();
+  }
+  aimF.hist.push({ t: now, p: aimF.p.clone(), n: aimF.n.clone() });
+  while (aimF.hist.length && now - aimF.hist[0].t > 0.4) aimF.hist.shift();
+}
+// position from just before the trigger was pulled (pulling it nudges the controller)
+function aimAtPress(now) {
+  let best = null;
+  for (const h of aimF.hist) if (now - h.t >= 0.12) best = h;
+  return best || aimF.hist[0] || (aimF.p ? { p: aimF.p, n: aimF.n } : null);
+}
+const _Y = new THREE.Vector3(0, 1, 0), _one = new THREE.Vector3(1, 1, 1), _q = new THREE.Quaternion();
+let lassoMaxDist = 0;      // how far a freehand stroke has travelled from the start
+let sampling = null;       // { sources, done, samples, frames, got, total }
+let widthM = 0.21;
+let scaleFactor = 1;
+let locked = false;
+let grabMode = true;
+let grab = null;           // { src, pc0: Vector2, c0: Vector2 }
+let buildRequest = false;
+let flatRequest = null;    // inputSource that tapped in quick-flat mode
+let anchor = null, anchorToken = 0;
+let lastTime = 0;
+let panelInit = false;
+let lastFrame = null;
+const panelTarget = new THREE.Vector3();
+const hitSources = new Map();
+const prevButtons = new Map();
+const hoverBtn = new Map();
+const activeBtn = new Map();
+const rays = new Map();
+const selecting = new Set();
+const scanning = new Set();
+const headPos = new THREE.Vector3();
+const headFwd = new THREE.Vector3(0, 0, -1);
+const headRight = new THREE.Vector3(1, 0, 0);
+const raycaster = new THREE.Raycaster();
+const tmpM = new THREE.Matrix4();
+
+function setOpacity(v) { imgUniforms.opacity.value = Math.min(1, Math.max(0.05, Math.round(v * 100) / 100)); }
+function applySize() { imgUniforms.size.value.set(widthM * scaleFactor, widthM * img.aspect * scaleFactor); }
+function pulse(src, strength = 0.4, ms = 50) {
+  try { src.gamepad?.hapticActuators?.[0]?.pulse(strength, ms); } catch {}
+}
+function clearAnchor() {
+  anchorToken++;
+  if (anchor) { try { anchor.delete(); } catch {} }
+  anchor = null;
+}
+function setLocked(v, src) {
+  locked = v;
+  grab = null;
+  imgUniforms.border.value = locked ? 0 : 1;
+  wireMat.visible = !locked && !freeMode;
+  if (src) pulse(src, locked ? 0.8 : 0.3, locked ? 80 : 40);
+}
+function resetAdjust() {
+  scaleFactor = 1;
+  imgUniforms.center.value.set(0, 0);
+  imgUniforms.rot.value = 0;
+  applySize();
+}
+function clearScan() {
+  scanPts.length = 0;
+  scanKeys.clear();
+  ptGeo.setDrawRange(0, 0);
+  clearLasso();
+}
+
+// ---------- lasso ----------
+function clearLasso() {
+  lassoPts.length = 0;
+  lassoClosed = false;
+  lassoEdit = false;
+  lassoDrag = -1;
+  lassoDrawSrc = null;
+  snapNow = false;
+  cancelSampling();
+  redrawLasso(null);
+}
+function redrawLasso(aimP) {
+  const n = lassoPts.length;
+  for (let i = 0; i < n; i++) {
+    lassoDotBuf.set(lassoPts[i].p, i * 3);
+    lassoLineBuf.set(lassoPts[i].p, i * 3);
+  }
+  let cnt = n;
+  if (n && (lassoClosed || (lassoEdit && n >= 3))) { lassoLineBuf.set(lassoPts[0].p, cnt * 3); cnt++; }
+  else if (n && aimP) {                       // rubber band to the pointer (snaps to start)
+    lassoLineBuf.set(snapNow ? lassoPts[0].p : aimP, cnt * 3); cnt++;
+  }
+  lassoLineGeo.attributes.position.needsUpdate = true;
+  lassoLineGeo.setDrawRange(0, cnt);
+  lassoDotGeo.attributes.position.needsUpdate = true;
+  lassoDotGeo.setDrawRange(0, n);
+  startMarker.visible = n > 0 && mode === 'scan';
+  if (n) startMarker.position.fromArray(lassoPts[0].p);
+  startMarker.material.color.set(snapNow ? 0x3dff7a : 0xffd23f);
+  startMarker.scale.setScalar(snapNow ? 1.6 : 1);
+}
+function addLassoPoint(p, n) {
+  if (lassoPts.length >= MAX_LASSO) return;
+  lassoPts.push({ p: [p.x, p.y, p.z], n: [n.x, n.y, n.z] });
+}
+const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+function nearestDot(p) {
+  let best = -1, bd = DOT_GRAB;
+  lassoPts.forEach((q, i) => { const d = dist3(p, q.p); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+// index to insert a new dot so it lands on the closest edge of the closed outline
+function edgeInsertIndex(p) {
+  let best = lassoPts.length, bd = Infinity;
+  for (let i = 0; i < lassoPts.length; i++) {
+    const a = lassoPts[i].p, b = lassoPts[(i + 1) % lassoPts.length].p;
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+    const l2 = ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2 || 1e-9;
+    const t = Math.max(0, Math.min(1, (ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / l2));
+    const d = dist3(p, [a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t]);
+    if (d < bd) { bd = d; best = i + 1; }
+  }
+  return best;
+}
+function loadOutline(o, src) {
+  if (!o || o.pts.length < 3) { detMsg = 'Could not read that object’s shape — try another part of it.'; return; }
+  clearLasso();
+  for (const p of o.pts) lassoPts.push({ p: p.slice(), n: o.n.slice() });
+  scanTool = 'lasso';
+  lassoEdit = true;
+  redrawLasso(null);
+  if (src) pulse(src, 0.6, 50);
+}
+function closeLasso(frame, ref, src) {
+  if (lassoPts.length < 3) return;
+  lassoClosed = true;
+  lassoDrawSrc = null;
+  lassoDrag = -1;
+  snapNow = false;
+  lastLasso = lassoPts.map((q) => ({ p: q.p.slice(), n: q.n.slice() }));
+  if (src) pulse(src, 0.7, 60);
+  redrawLasso(null);
+  startSampling(frame, ref);
+}
+
+// After closing: shoot a grid of fixed hit-test rays from the head into the
+// lasso area so the surface inside is measured automatically.
+function startSampling(frame, ref) {
+  const pts = lassoPts;
+  let c = new THREE.Vector3(), n = new THREE.Vector3();
+  for (const q of pts) { c.add(new THREE.Vector3(...q.p)); n.add(new THREE.Vector3(...q.n)); }
+  c.multiplyScalar(1 / pts.length);
+  if (n.lengthSq() < 1e-6) n.set(0, 1, 0);
+  n.normalize();
+  if (n.dot(headPos.clone().sub(c)) < 0) n.negate();
+  let x = headRight.clone().addScaledVector(n, -headRight.dot(n));
+  if (x.lengthSq() < 1e-6) x.set(1, 0, 0).addScaledVector(n, -n.x);
+  x.normalize();
+  const y = new THREE.Vector3().crossVectors(n, x);
+  const P = pts.map((q) => { const d = new THREE.Vector3(...q.p).sub(c); return [d.dot(x), d.dot(y)]; });
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [a, b] of P) { minX = Math.min(minX, a); maxX = Math.max(maxX, a); minY = Math.min(minY, b); maxY = Math.max(maxY, b); }
+  const inside = (px, py) => {
+    let ins = false;
+    for (let a = 0, b = P.length - 1; a < P.length; b = a++) {
+      const [xa, ya] = P[a], [xb, yb] = P[b];
+      if ((ya > py) !== (yb > py) && px < ((xb - xa) * (py - ya)) / (yb - ya) + xa) ins = !ins;
+    }
+    return ins;
+  };
+  const targets = [];
+  for (const G of [16, 13, 11, 9]) {           // densest grid that stays under ~140 rays
+    targets.length = 0;
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+      const u = minX + (maxX - minX) * (i + 0.5) / G, v = minY + (maxY - minY) * (j + 0.5) / G;
+      if (inside(u, v)) targets.push(c.clone().addScaledVector(x, u).addScaledVector(y, v));
+    }
+    if (targets.length <= 140) break;
+  }
+  const origin = headPos.clone();
+  sampling = { sources: [], done: new Set(), samples: [], frames: 0, got: 0, total: targets.length,
+               c, n, failed: false };
+  const s = sampling;
+  if (typeof XRRay === 'undefined' || !targets.length) { s.failed = true; return; }
+  for (const t of targets) {
+    const d = t.clone().sub(origin).normalize();
+    let ray;
+    try { ray = new XRRay({ x: origin.x, y: origin.y, z: origin.z, w: 1 }, { x: d.x, y: d.y, z: d.z, w: 0 }); }
+    catch { s.failed = true; return; }
+    session.requestHitTestSource({ space: ref, offsetRay: ray })
+      .then((h) => { if (sampling === s) s.sources.push(h); else h.cancel(); })
+      .catch(() => { s.done.add('err' + Math.random()); });
+  }
+}
+function cancelSampling() {
+  if (!sampling) return;
+  for (const h of sampling.sources) { try { h.cancel(); } catch {} }
+  sampling = null;
+}
+// returns a surface when finished, otherwise null
+function stepSampling(frame, ref) {
+  const s = sampling;
+  s.frames++;
+  for (const h of s.sources) {
+    if (s.done.has(h)) continue;
+    const r = frame.getHitTestResults(h);
+    if (!r.length) continue;
+    const p = r[0].getPose(ref);
+    if (!p) continue;
+    s.done.add(h);
+    const m = p.transform.matrix;
+    const pt = new THREE.Vector3(m[12], m[13], m[14]);
+    // ignore hits far off the lasso's plane (hands, background)
+    if (Math.abs(pt.clone().sub(s.c).dot(s.n)) < 0.3) s.samples.push({ p: [pt.x, pt.y, pt.z], n: [m[4], m[5], m[6]] });
+  }
+  s.got = s.samples.length;
+  const finished = s.failed || s.done.size >= s.total || s.frames > 60;
+  if (!finished) return null;
+  const all = lassoPts.concat(s.samples);
+  const surf = buildSurface(all, [headRight.x, headRight.y, headRight.z], [headPos.x, headPos.y, headPos.z],
+                            lassoPts.map((q) => q.p));
+  cancelSampling();
+  return surf || 'fail';
+}
+function enterScan(keepShape = false) {
+  const keep = keepShape && lastLasso && lastLasso.length >= 3 ? lastLasso.map((q) => ({ p: q.p.slice(), n: q.n.slice() })) : null;
+  mode = 'scan';
+  freeMode = false;
+  setLocked(false);
+  grab = null;
+  surface.visible = false;
+  ptCloud.visible = true;
+  lassoLine.visible = lassoDots.visible = true;
+  clearAnchor();
+  clearScan();
+  detMsg = '';
+  if (keep) { lassoPts.push(...keep); scanTool = 'lasso'; lassoEdit = true; redrawLasso(null); }
+  hoverBtn.clear(); activeBtn.clear();
+}
+let freeMode = false;        // image floating free (not on a scanned surface)
+let reanchorRequest = false;
+function anchorSurfaceHere(frame, ref) {
+  clearAnchor();
+  if (!frame.createAnchor || typeof XRRigidTransform === 'undefined') return;
+  const p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  surface.matrix.decompose(p, q, sc);
+  const token = anchorToken;
+  frame.createAnchor(new XRRigidTransform({ x: p.x, y: p.y, z: p.z }, { x: q.x, y: q.y, z: q.z, w: q.w }), ref)
+    .then((a) => { if (token === anchorToken) anchor = a; else a.delete(); })
+    .catch(() => {});
+}
+// open the image floating ~50 cm in front of the viewer, facing them
+function enterFree(frame, ref) {
+  const p = headPos.clone().addScaledVector(headFwd, 0.5);
+  p.y -= 0.1;
+  const n = headPos.clone().sub(p).normalize();
+  const size = Math.min(3, Math.max(0.6, widthM * Math.max(1, img.aspect) * 3));
+  const s = flatSurface([p.x, p.y, p.z], [n.x, n.y, n.z], [headRight.x, headRight.y, headRight.z], size, size / 40);
+  if (s) enterMap(s, frame, ref, true);
+}
+// turn the free image to lie flat (table) or stand up facing you
+function toggleLayFlat() {
+  const p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  surface.matrix.decompose(p, q, sc);
+  const z = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  let n;
+  if (z.y > 0.9) { n = headPos.clone().sub(p); n.y = 0; if (n.lengthSq() < 1e-6) n.set(0, 0, 1); n.normalize(); }
+  else n = new THREE.Vector3(0, 1, 0);
+  const x = headRight.clone().addScaledVector(n, -headRight.dot(n));
+  if (x.lengthSq() < 1e-6) x.set(1, 0, 0);
+  x.normalize();
+  const y = new THREE.Vector3().crossVectors(n, x);
+  surface.matrix.makeBasis(x, y, n).setPosition(p);
+  surface.updateMatrixWorld(true);
+  reanchorRequest = true;
+}
+function enterMap(s, frame, ref, free = false) {
+  setSurface(s);
+  freeMode = free;
+  mode = 'map';
+  ptCloud.visible = false;
+  lassoLine.visible = lassoDots.visible = false;
+  startMarker.visible = false;
+  resetAdjust();
+  setLocked(false);
+  hoverBtn.clear(); activeBtn.clear();
+  // anchor the surface so it stays put
+  anchorSurfaceHere(frame, ref);
+  if (!img.texture) openPicker();   // no image yet -> go straight to the gallery
+}
+
+$('start').addEventListener('click', () => startSession('scan'));
+$('openImg').addEventListener('click', () => startSession('free'));
+
+let startMode = 'scan';     // 'scan' = surface selection first, 'free' = image floats in front of you
+let freePending = false;
+async function startSession(kind, auto = false) {
+  if (session) return;
+  startMode = kind;
+  savePrefs();
+  widthM = Math.max(0.02, (+$('width').value || 21) / 100);
+  imgUniforms.map.value = img.texture;
+  setOpacity(+$('opacity').value);
+  applySize();
+
+  try {
+    session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test', 'local-floor'],
+      optionalFeatures: ['anchors', 'hand-tracking', 'plane-detection', 'mesh-detection'],
+    });
+  } catch (err) {
+    session = null;
+    setStatus(auto ? 'Image ready — press "Open image in headset".' : 'Could not start AR: ' + err.message);
+    return;
+  }
+  await renderer.xr.setSession(session);
+  session.addEventListener('end', onEnd);
+  session.addEventListener('inputsourceschange', onInputs);
+  session.addEventListener('selectstart', onSelectStart);
+  session.addEventListener('selectend', onSelectEnd);
+  session.addEventListener('squeezestart', (e) => { if (mode === 'map' && !locked) startGrab(e.inputSource); });
+  session.addEventListener('squeezeend', (e) => endGrab(e.inputSource));
+  onInputs({ added: [...session.inputSources], removed: [] });
+  enterScan();
+  freePending = startMode === 'free';
+  lastTime = 0;
+  panelInit = false;
+  panelKey = '';
+  panelHidden = false;
+  panel.visible = true;
+  chip.visible = false;
+  renderer.setAnimationLoop(onFrame);
+  setStatus('');
+}
+
+function onInputs(e) {
+  for (const src of e.removed) {
+    const h = hitSources.get(src);
+    if (h) { h.cancel(); hitSources.delete(src); }
+    const r = rays.get(src);
+    if (r) { scene.remove(r); rays.delete(src); }
+    hoverBtn.delete(src); activeBtn.delete(src); selecting.delete(src); scanning.delete(src);
+    if (grab && grab.src === src) grab = null;
+  }
+  for (const src of e.added) {
+    if (src.targetRayMode !== 'tracked-pointer') continue;
+    session.requestHitTestSource({ space: src.targetRaySpace })
+      .then((h) => hitSources.set(src, h))
+      .catch(() => {});
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthTest: false })
+    );
+    line.renderOrder = 11;
+    line.matrixAutoUpdate = false;
+    line.visible = false;
+    scene.add(line);
+    rays.set(src, line);
+  }
+}
+
+function onSelectStart(e) {
+  const src = e.inputSource;
+  selecting.add(src);
+  const b = hoverBtn.get(src);
+  if (b) {
+    if (!btnEnabled(b)) return;
+    activeBtn.set(src, { btn: b, next: 0 });
+    pressButton(b, src);
+    pulse(src, 0.25, 25);
+    return;
+  }
+  if (mode === 'scan') {
+    if (sampling) return;
+    if (scanTool === 'flat') flatRequest = src;
+    else if (scanTool === 'sweep') scanning.add(src);
+    else if (scanTool === 'detect') detPickSrc = src;
+    else if (!lassoClosed) { lassoDrawSrc = src; lassoTap = true; lassoDrag = -1; }
+  } else if (mode === 'map' && !locked && grabMode && img.texture) {
+    startGrab(src);
+  }
+}
+
+function onSelectEnd(e) {
+  const src = e.inputSource;
+  selecting.delete(src);
+  scanning.delete(src);
+  activeBtn.delete(src);
+  if (lassoDrawSrc === src) { lassoDrawSrc = null; lassoDrag = -1; }
+  endGrab(src);
+}
+
+function pressButton(b, src) {
+  const op = imgUniforms.opacity.value;
+  switch (b.id) {
+    case 'op-': setOpacity(op - 0.05); break;
+    case 'op+': setOpacity(op + 0.05); break;
+    case 'lock': setLocked(!locked, src); break;
+    case 'reset': resetAdjust(); break;
+    case 'rescan': enterScan(!freeMode && !!lastLasso); break;
+    case 'lay': toggleLayFlat(); break;
+    case 'grab': grabMode = !grabMode; grab = null; break;
+    case 'clear': clearScan(); break;
+    case 't-lasso': scanTool = 'lasso'; lassoDrawSrc = null; break;
+    case 't-sweep': scanTool = 'sweep'; lassoDrawSrc = null; break;
+    case 't-flat': scanTool = 'flat'; lassoDrawSrc = null; break;
+    case 't-detect': scanTool = 'detect'; lassoDrawSrc = null; detMsg = ''; break;
+    case 'room':
+      if (session && typeof session.initiateRoomCapture === 'function' && !roomCaptureTried) {
+        roomCaptureTried = true;
+        session.initiateRoomCapture().catch(() => { detMsg = 'Room setup could not start here. Use Settings › Environment setup in the headset.'; });
+      } else detMsg = 'Run Space Setup from the headset: Settings › Environment setup › Space setup, then restart tracing.';
+      break;
+    case 'undo':
+      if (lassoClosed) lassoClosed = false;
+      lassoPts.pop(); snapNow = false; redrawLasso(null);
+      break;
+    case 'done': buildRequest = true; break;
+    case 'quit': if (session) session.end().catch(() => {}); break;
+    case 'image': openPicker(); break;
+    case 'hide': setPanelHidden(true); break;
+    case 'show': setPanelHidden(false); break;
+    case 'steady':
+      steadyLevel = (steadyLevel + 1) % STEADY.length;
+      try { localStorage.setItem('traceAR.steady', String(steadyLevel)); } catch {}
+      break;
+    case 'back': closePicker(); break;
+    case 'refresh': refreshGallery(); break;
+    case 'prev': galleryPage--; loadPageThumbs(); break;
+    case 'next': galleryPage++; loadPageThumbs(); break;
+    default:
+      if (b.group === 'tile') chooseTile(+b.id.slice(4));
+  }
+}
+
+function holdButton(b, dt) {
+  const MOVE = 0.03 * dt;
+  const c = imgUniforms.center.value;
+  switch (b.id) {
+    case 'mv-l': c.x -= MOVE; break;
+    case 'mv-r': c.x += MOVE; break;
+    case 'mv-u': c.y += MOVE; break;
+    case 'mv-d': c.y -= MOVE; break;
+    case 'sz-': scaleFactor = Math.max(0.05, scaleFactor * Math.exp(-0.35 * dt)); applySize(); break;
+    case 'sz+': scaleFactor = Math.min(20, scaleFactor * Math.exp(0.35 * dt)); applySize(); break;
+    case 'rt-': imgUniforms.rot.value += 0.35 * dt; break;
+    case 'rt+': imgUniforms.rot.value -= 0.35 * dt; break;
+  }
+}
+
+// ---- grab: slide the image along the scanned surface ----
+function surfaceHit(src) {
+  if (!lastFrame || !imgMesh) return null;
+  const ref = renderer.xr.getReferenceSpace();
+  const p = lastFrame.getPose(src.targetRaySpace, ref);
+  if (!p) return null;
+  tmpM.fromArray(p.transform.matrix);
+  raycaster.set(new THREE.Vector3().setFromMatrixPosition(tmpM), new THREE.Vector3(0, 0, -1).transformDirection(tmpM));
+  surface.updateMatrixWorld(true);
+  const hit = raycaster.intersectObject(imgMesh, false)[0];
+  if (!hit) return null;
+  const local = surface.worldToLocal(hit.point.clone());
+  return new THREE.Vector2(local.x, local.y);
+}
+function startGrab(src) {
+  if (freeMode) {
+    if (!lastFrame) return;
+    const p = lastFrame.getPose(src.gripSpace || src.targetRaySpace, renderer.xr.getReferenceSpace());
+    if (!p) return;
+    grab = { src, free: true, c0inv: new THREE.Matrix4().fromArray(p.transform.matrix).invert(), s0: surface.matrix.clone() };
+    pulse(src, 0.5, 40);
+    return;
+  }
+  const pc = surfaceHit(src);
+  if (!pc) return;
+  grab = { src, pc0: pc, c0: imgUniforms.center.value.clone() };
+  pulse(src, 0.5, 40);
+}
+function endGrab(src) {
+  if (grab && grab.src === src) {
+    if (grab.free) reanchorRequest = true;     // re-anchor where it was dropped
+    grab = null; pulse(src, 0.2, 20);
+  }
+}
+function updateGrab() {
+  if (grab.free) {
+    const p = lastFrame && lastFrame.getPose(grab.src.gripSpace || grab.src.targetRaySpace, renderer.xr.getReferenceSpace());
+    if (!p) return;
+    const target = new THREE.Matrix4().fromArray(p.transform.matrix).multiply(grab.c0inv).multiply(grab.s0);
+    const pT = new THREE.Vector3(), qT = new THREE.Quaternion(), pS = new THREE.Vector3(), qS = new THREE.Quaternion(), sc = new THREE.Vector3();
+    target.decompose(pT, qT, sc);
+    surface.matrix.decompose(pS, qS, sc);
+    const k = Math.min(1, STEADY[steadyLevel].grab * 1.6);
+    pS.lerp(pT, k); qS.slerp(qT, k);
+    surface.matrix.compose(pS, qS, new THREE.Vector3(1, 1, 1));
+    surface.updateMatrixWorld(true);
+    return;
+  }
+  const pc = surfaceHit(grab.src);
+  if (!pc) return;
+  const target = grab.c0.clone().add(pc.sub(grab.pc0));
+  imgUniforms.center.value.lerp(target, STEADY[steadyLevel].grab);
+}
+
+function onEnd() {
+  renderer.setAnimationLoop(null);
+  hitSources.forEach((h) => { try { h.cancel(); } catch {} });
+  hitSources.clear();
+  rays.forEach((r) => scene.remove(r));
+  rays.clear();
+  prevButtons.clear(); hoverBtn.clear(); activeBtn.clear(); selecting.clear(); scanning.clear();
+  grab = null; buildRequest = false; flatRequest = null; lassoDrawSrc = null;
+  cancelSampling();
+  lassoLine.visible = lassoDots.visible = startMarker.visible = false;
+  for (const e of detObjs.values()) { detGroup.remove(e.mesh); e.mesh.geometry.dispose(); }
+  detObjs.clear(); detHover = null; detPickSrc = null; tag.visible = false; detGroup.visible = false;
+  roomCaptureTried = false;
+  clearAnchor();
+  panel.visible = false;
+  chip.visible = false;
+  surface.visible = false;
+  ptCloud.visible = false;
+  reticle.visible = false;
+  session = null;
+  lastFrame = null;
+  setStatus('Session ended. Press Start to trace again.');
+}
+
+// edge-detected gamepad button press
+function pressed(src, idx) {
+  const key = src.handedness + ':' + idx;
+  const now = !!src.gamepad?.buttons[idx]?.pressed;
+  const was = prevButtons.get(key) || false;
+  prevButtons.set(key, now);
+  return now && !was;
+}
+const dz = (v) => (Math.abs(v) < 0.15 ? 0 : v);
+
+function handleControllers(dt) {
+  for (const src of session.inputSources) {
+    const gp = src.gamepad;
+    if (!gp || src.hand) continue;
+    const sx = dz(gp.axes[2] || 0);
+    const sy = dz(gp.axes[3] || 0);
+    if (src.handedness === 'right') {
+      const aDown = pressed(src, 4);
+      if (mode !== 'map') continue;
+      if (aDown) setLocked(!locked, src);
+      if (!locked) {
+        if (sx) imgUniforms.rot.value -= sx * dt * 0.8;
+        if (sy) { scaleFactor = Math.min(20, Math.max(0.05, scaleFactor * Math.exp(-sy * dt * 0.6))); applySize(); }
+      }
+    } else if (src.handedness === 'left') {
+      const xDown = pressed(src, 4), yDown = pressed(src, 5), stickDown = pressed(src, 3);
+      if (stickDown) { setPanelHidden(!panelHidden); pulse(src, 0.3, 30); }
+      if (mode !== 'map') continue;
+      if (xDown) { setOpacity(imgUniforms.opacity.value - 0.05); pulse(src, 0.2, 30); }
+      if (yDown) { setOpacity(imgUniforms.opacity.value + 0.05); pulse(src, 0.2, 30); }
+      if (!locked && (sx || sy)) {
+        const c = imgUniforms.center.value;
+        c.x += sx * 0.05 * dt;
+        c.y -= sy * 0.05 * dt;
+      }
+    }
+  }
+}
+
+function updatePanelPose(viewer, dt) {
+  const hp = viewer.transform.position;
+  headPos.set(hp.x, hp.y, hp.z);
+  const o = viewer.transform.orientation;
+  const q = new THREE.Quaternion(o.x, o.y, o.z, o.w);
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q); f.y = 0;
+  if (f.lengthSq() > 1e-4) {
+    f.normalize();
+    headFwd.copy(f);
+    headRight.set(-f.z, 0, f.x);
+  }
+  const desired = headPos.clone().addScaledVector(headFwd, 0.5);
+  desired.y -= 0.12;
+  const toPanel = panel.position.clone().sub(headPos); toPanel.y = 0;
+  const angle = toPanel.lengthSq() > 1e-4 ? toPanel.normalize().angleTo(headFwd) : Math.PI;
+  const dist = panel.position.distanceTo(headPos);
+  if (!panelInit) { panelTarget.copy(desired); panel.position.copy(desired); panelInit = true; }
+  else if (angle > 0.85 || dist > 1.1 || dist < 0.25) panelTarget.copy(desired);
+  if (activeBtn.size === 0 && scanning.size === 0 && !lassoDrawSrc) panel.position.lerp(panelTarget, Math.min(1, dt * 4));
+  panel.lookAt(headPos);
+}
+
+function updateChip(frame, ref) {
+  let left = null;
+  for (const src of session.inputSources) if (src.handedness === 'left' && src.gripSpace && !src.hand) left = src;
+  const gp = left ? frame.getPose(left.gripSpace, ref) : null;
+  if (gp) {
+    const p = gp.transform.position;
+    chip.position.set(p.x, p.y + 0.075, p.z);
+  } else {
+    const target = headPos.clone().addScaledVector(headFwd, 0.45).addScaledVector(headRight, -0.16);
+    target.y -= 0.25;
+    chip.position.lerp(target, 0.15);
+  }
+  chip.lookAt(headPos);
+}
+
+function updateRays(frame, ref) {
+  for (const [src, line] of rays) {
+    const p = frame.getPose(src.targetRaySpace, ref);
+    if (!p) { line.visible = false; hoverBtn.set(src, null); continue; }
+    tmpM.fromArray(p.transform.matrix);
+    raycaster.set(new THREE.Vector3().setFromMatrixPosition(tmpM), new THREE.Vector3(0, 0, -1).transformDirection(tmpM));
+    let hit = null;
+    if (panel.visible) {
+      hit = raycaster.intersectObject(panel, false)[0] || null;
+      hoverBtn.set(src, hit && hit.uv ? btnAt(hit.uv) : null);
+    } else if (chip.visible) {
+      hit = raycaster.intersectObject(chip, false)[0] || null;
+      hoverBtn.set(src, hit ? CHIP_BTN : null);
+    } else hoverBtn.set(src, null);
+    line.matrix.copy(tmpM).multiply(new THREE.Matrix4().makeScale(1, 1, hit ? hit.distance : 0.4));
+    line.visible = true;
+  }
+}
+
+// follow the anchor, but ignore tiny tracking jitter and ease out bigger corrections
+const _pA = new THREE.Vector3(), _qA = new THREE.Quaternion(), _pS = new THREE.Vector3(), _qS = new THREE.Quaternion(), _sc = new THREE.Vector3();
+const _mA = new THREE.Matrix4();
+function smoothSurfaceTo(arr) {
+  _mA.fromArray(arr).decompose(_pA, _qA, _sc);
+  surface.matrix.decompose(_pS, _qS, _sc);
+  const d = _pS.distanceTo(_pA), ang = _qS.angleTo(_qA);
+  if (d > 0.1 || ang > 0.2) { _pS.copy(_pA); _qS.copy(_qA); }           // re-localised: jump
+  else if (d < 0.004 && ang < 0.012) return;                                // jitter: ignore
+  else { _pS.lerp(_pA, 0.12); _qS.slerp(_qA, 0.12); }
+  surface.matrix.compose(_pS, _qS, _one);
+  surface.updateMatrixWorld(true);
+}
+
+function addScanPoint(pose) {
+  if (scanPts.length >= MAX_PTS) return;
+  const m = pose.transform.matrix;
+  const p = [m[12], m[13], m[14]];
+  const key = Math.round(p[0] / 0.004) + ',' + Math.round(p[1] / 0.004) + ',' + Math.round(p[2] / 0.004);
+  if (scanKeys.has(key)) return;
+  scanKeys.add(key);
+  scanPts.push({ p, n: [m[4], m[5], m[6]] });   // hit pose Y axis = surface normal
+  const i = scanPts.length - 1;
+  ptBuf[i * 3] = p[0]; ptBuf[i * 3 + 1] = p[1]; ptBuf[i * 3 + 2] = p[2];
+  ptGeo.attributes.position.needsUpdate = true;
+  ptGeo.setDrawRange(0, scanPts.length);
+}
+
+function onFrame(t, frame) {
+  if (!frame || !session) return;
+  lastFrame = frame;
+  const dt = lastTime ? Math.min((t - lastTime) / 1000, 0.1) : 0;
+  lastTime = t;
+  const ref = renderer.xr.getReferenceSpace();
+
+  const viewer = frame.getViewerPose(ref);
+  if (viewer) updatePanelPose(viewer, dt);
+  if (chip.visible) updateChip(frame, ref);
+  updateRays(frame, ref);
+  if (chip.visible) drawChip([...hoverBtn.values()].includes(CHIP_BTN));
+
+  reticle.visible = false;
+  if (mode === 'scan') {
+    // reticle for the right-most pointer not on the panel
+    let aim = lassoDrawSrc && hitSources.has(lassoDrawSrc) ? lassoDrawSrc : null;
+    if (!aim) for (const src of hitSources.keys()) if (!hoverBtn.get(src) && (!aim || src.handedness === 'right')) aim = src;
+    let aimPose = null;
+    if (aim && !sampling) {
+      const r = frame.getHitTestResults(hitSources.get(aim));
+      if (r.length) {
+        aimPose = r[0].getPose(ref);
+        if (aimPose) {
+          const m = aimPose.transform.matrix;
+          filterAim(aim, new THREE.Vector3(m[12], m[13], m[14]), new THREE.Vector3(m[4], m[5], m[6]), dt, t / 1000);
+          _q.setFromUnitVectors(_Y, aimF.n);
+          reticle.matrix.compose(aimF.p, _q, _one);
+          reticle.visible = true;
+        }
+      }
+    }
+
+    // ---- detect: highlight the object under the pointer, trigger picks it ----
+    updateDetections(frame, ref);
+    if (scanTool === 'detect') {
+      reticle.visible = false;
+      const hit = aim && !hoverBtn.get(aim) ? detRaycast(aim, frame, ref) : null;
+      if (detHover?.entry && detHover.entry !== hit?.entry) detHover.entry.mesh.material.opacity = 0.16;
+      detHover = hit;
+      if (hit) {
+        hit.entry.mesh.material.opacity = 0.42;
+        setTag(prettyLabel(hit.entry.label));
+        tag.position.copy(hit.point).add(new THREE.Vector3(0, 0.05, 0));
+        tag.lookAt(headPos);
+        tag.visible = true;
+      } else tag.visible = false;
+      if (detPickSrc) {
+        const ph = detRaycast(detPickSrc, frame, ref);
+        const src = detPickSrc;
+        detPickSrc = null;
+        if (ph) { detHover = null; tag.visible = false; ph.entry.mesh.material.opacity = 0.16; loadOutline(outlineFromHit(ph), src); }
+      }
+    } else tag.visible = false;
+
+    // ---- lasso: tap = drop a dot, hold + move = freehand, near first dot = close ----
+    if (scanTool === 'lasso' && !lassoClosed && !sampling) {
+      const aimP = aimPose && aimF.p ? [aimF.p.x, aimF.p.y, aimF.p.z] : null;
+      const first = lassoPts[0]?.p;
+      snapNow = !lassoEdit && !!(aimP && lassoPts.length >= 3 && dist3(aimP, first) < SNAP);
+      if (lassoDrawSrc && aim === lassoDrawSrc && aimPose && !hoverBtn.get(aim)) {
+        const last = lassoPts[lassoPts.length - 1]?.p;
+        if (lassoTap) {
+          lassoTap = false;
+          lassoMaxDist = 0;
+          const pr = aimAtPress(t / 1000);
+          const prA = pr ? [pr.p.x, pr.p.y, pr.p.z] : null;
+          const near = !lassoEdit && prA && lassoPts.length >= 3 && dist3(prA, first) < SNAP;
+          const dot = prA ? nearestDot(prA) : -1;
+          if (snapNow || near) closeLasso(frame, ref, aim);
+          else if (dot >= 0 && (lassoEdit || dot > 0)) { lassoDrag = dot; pulse(aim, 0.4, 25); }     // pick up a dot
+          else if (pr && lassoEdit) {                                                                 // add a dot on the nearest edge
+            const k = edgeInsertIndex(prA);
+            lassoPts.splice(k, 0, { p: prA, n: [pr.n.x, pr.n.y, pr.n.z] });
+            lassoDrag = k; pulse(aim, 0.3, 20);
+          }
+          else if (pr) { addLassoPoint(pr.p, pr.n); pulse(aim, 0.3, 20); }
+        } else if (lassoDrag >= 0) {
+          lassoPts[lassoDrag].p = aimP.slice();                                                       // dragging a dot
+          lassoPts[lassoDrag].n = [aimF.n.x, aimF.n.y, aimF.n.z];
+        } else if (!lassoEdit && last && dist3(aimP, last) > 0.015) {
+          // freehand: drop dots as the pointer moves; auto-close when it comes back to the start
+          lassoMaxDist = Math.max(lassoMaxDist, dist3(aimP, first));
+          if (snapNow && lassoMaxDist > SNAP * 2.5) closeLasso(frame, ref, aim);
+          else addLassoPoint(aimF.p, aimF.n);
+        }
+      }
+      if (!lassoClosed) redrawLasso(aimP);
+    }
+    if (sampling) {
+      const r = stepSampling(frame, ref);
+      if (r === 'fail') { lassoClosed = false; redrawLasso(null); }
+      else if (r) enterMap(r, frame, ref);
+    }
+    // collect points from every pointer currently scanning
+    for (const src of scanning) {
+      if (hoverBtn.get(src)) continue;
+      const h = hitSources.get(src);
+      if (!h) continue;
+      for (const r of frame.getHitTestResults(h)) {
+        const p = r.getPose(ref);
+        if (p) addScanPoint(p);
+        break;
+      }
+    }
+    const right = [headRight.x, headRight.y, headRight.z];
+    const head = [headPos.x, headPos.y, headPos.z];
+    if (flatRequest) {
+      const h = hitSources.get(flatRequest);
+      flatRequest = null;
+      const r = h ? frame.getHitTestResults(h) : [];
+      const p = r.length ? r[0].getPose(ref) : null;
+      if (p) {
+        const m = p.transform.matrix;
+        const s = flatSurface([m[12], m[13], m[14]], [m[4], m[5], m[6]], right);
+        if (s) enterMap(s, frame, ref);
+      }
+    }
+    if (buildRequest) {
+      buildRequest = false;
+      if (scanTool === 'lasso') { if (!lassoClosed && !sampling) closeLasso(frame, ref, null); }
+      else {
+        const s = buildSurface(scanPts, right, head);
+        if (s) enterMap(s, frame, ref);
+      }
+    }
+  }
+
+  if (freePending && viewer) { freePending = false; enterFree(frame, ref); }
+  if (reanchorRequest && !grab) { reanchorRequest = false; anchorSurfaceHere(frame, ref); }
+  if (surface.visible && anchor && !(grab && grab.free) && !reanchorRequest) {
+    const ap = frame.getPose(anchor.anchorSpace, ref);
+    if (ap) smoothSurfaceTo(ap.transform.matrix);
+  }
+
+  for (const [src, a] of activeBtn) {
+    if (!btnEnabled(a.btn)) { activeBtn.delete(src); continue; }
+    if (a.btn.kind === 'hold') holdButton(a.btn, dt);
+    else if (a.btn.kind === 'repeat') {
+      a.next += dt;
+      if (a.next > 0.35) { a.next = 0.23; pressButton(a.btn, src); }
+    }
+  }
+
+  if (grab && mode === 'map' && !locked) updateGrab();
+  handleControllers(dt);
+  drawPanel();
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
