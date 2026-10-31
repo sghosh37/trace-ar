@@ -69,8 +69,10 @@
       <li><b>Map the image.</b> The image is projected onto the scanned shape, so it bends over curves. Hold the trigger on the surface to slide it around; use the panel to resize, turn and set opacity.</li>
       <li><b>Hide the panel</b> with <b>Hide</b> (or click the left thumbstick). A small <b>Show panel</b> button floats above your left controller to bring it back. <b>Steady: Low / Medium / High</b> on the scan panel sets how much the pointer is smoothed.</li>
       <li>Sway your head a little: if the image slides over the paper, press <b>Raise</b> / <b>Lower</b> (1 mm steps) until it stays put — then it sits exactly on the paper.</li>
+      <li><b>Gap between your line and the image?</b> Tilt your head: if the gap changes, use <b>Raise / Lower</b>; if it stays the same, nudge with <b>Up / Down / Left / Right</b>. These six buttons keep working while locked, in exact 1 mm steps.</li>
       <li><b>Lock</b> (panel) and trace. A locked image is frozen in place (to unlock, hold the button for a moment). Opacity still works while locked.</li>
-      <li><b>Blink:</b> after locking, the image blinks for 5 s as a preview. Set <b>Blink / min</b> on the panel (0 = off, up to 50) to keep it blinking — handy for checking your lines against the paper.</li>
+      <li><b>Blink:</b> after locking, the image blinks for 5 s as a preview. Set <b>Blink / sec</b> on the panel (0 = off, up to 50 per second) to keep it blinking — handy for checking your lines against the paper.<br>
+          <span style="color:#ffb347">Caution: fast flashing (roughly 3–30 per second) can trigger seizures in people with photosensitive epilepsy. Above about 36 per second the headset switches to its fastest display mode; very fast blinking looks like a dimmer, shimmering image rather than separate blinks.</span></li>
     </ol>
     <h3>Controller shortcuts (map step)</h3>
     <table>
@@ -786,10 +788,10 @@ const BTN_PICK = [];
   a('bl-', '−', 530, 77, 66, 70, 'repeat', 'always');
   a('bl+', '+', 682, 77, 66, 70, 'repeat', 'always');
   [['mv-l', 'Left'], ['mv-r', 'Right'], ['mv-u', 'Up'], ['mv-d', 'Down']].forEach(([id, l], i) =>
-    a(id, l, 20 + i * 123, 190, 113, 80, 'hold', 'adjust'));
+    a(id, l, 20 + i * 123, 190, 113, 80, 'hold', 'fine'));
   // move the image towards / away from you, along the surface normal, 1 mm per press
-  a('h+', 'Raise', 512, 190, 113, 80, 'repeat', 'adjust');
-  a('h-', 'Lower', 635, 190, 113, 80, 'repeat', 'adjust');
+  a('h+', 'Raise', 512, 190, 113, 80, 'repeat', 'fine');
+  a('h-', 'Lower', 635, 190, 113, 80, 'repeat', 'fine');
   a('sz-', 'Size −', 20, 290, 175, 70, 'hold', 'adjust');
   a('sz+', 'Size +', 203, 290, 175, 70, 'hold', 'adjust');
   a('rt-', 'Turn left', 386, 290, 175, 70, 'hold', 'adjust');
@@ -812,6 +814,7 @@ function btnEnabled(b) {
   if (b.group === 'always') return true;
   if (b.group === 'scanidle') return !sampling;
   if (b.group === 'free') return freeMode && !locked;
+  if (b.group === 'fine') return true;          // Up/Down/Left/Right/Raise/Lower: also while locked (1 mm steps)
   if (b.group === 'undo') return !sampling && scanTool === 'lasso' && lassoPts.length > 0;
   if (b.group === 'enough') return !sampling && (scanTool === 'lasso' ? lassoPts.length >= 3 : scanTool === 'sweep' ? scanPts.length >= 40 : false);
   if (b.group === 'tile') return !!galleryItem(+b.id.slice(4));
@@ -908,7 +911,7 @@ let panelKey = '';
 function drawPanel() {
   const hovered = new Set([...hoverBtn.values()].filter(Boolean));
   const pressedIds = new Set([...activeBtn.values()].map((a) => a.btn.id));
-  const key = [mode, blinkRate, blinkOn, blinkTrialUntil > performance.now() ? Math.floor(performance.now() / 80) : 0, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
+  const key = [mode, fineNudge.x, fineNudge.y, blinkRate, blinkOn, flashWarnUntil > performance.now(), blinkTrialUntil > performance.now() ? Math.floor(performance.now() / 80) : 0, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
     thumbRev, galleryPage, img.name, gallery.length,
     [...hovered].map((b) => b.id).join(), [...pressedIds].join()].join('|');
   if (key === panelKey) return;
@@ -933,8 +936,9 @@ function drawPanel() {
   } else {
     status = !img.texture ? 'Press Image to choose a picture'
            : freeMode && !locked ? (grab ? 'Carrying · release trigger to drop' : 'Hold trigger to carry the image · then Lock')
+           : flashWarnUntil > performance.now() ? 'Caution: fast flashing can trigger seizures'
            : locked && blinkTrialUntil > performance.now() ? `LOCKED · Blink −/+ sets speed (${Math.ceil((blinkTrialUntil - performance.now()) / 1000)}s)`
-           : locked ? 'LOCKED · trace away'
+           : locked ? 'LOCKED · gap? Raise/Lower or nudge 1 mm'
            : grab ? 'Sliding · release trigger to drop'
            : grabMode ? 'Step 2 · Hold trigger on surface to slide image'
            : 'Step 2 · Position the image, then Lock';
@@ -1007,7 +1011,7 @@ function drawPanel() {
     ctx.fillStyle = '#bbb';
     ctx.font = 'bold 28px system-ui, sans-serif';
     ctx.fillText('Opacity', 24, 110);
-    ctx.fillText('Move · Size · Turn', 24, 172);
+    ctx.fillText(locked ? 'Fine-tune · 1 mm' + (fineNudge.x || fineNudge.y ? ` · nudge ${fineNudge.x >= 0 ? '+' : ''}${fineNudge.x},${fineNudge.y >= 0 ? '+' : ''}${fineNudge.y}` : '') : 'Move · Size · Turn', 24, 172);
     ctx.textAlign = 'right';
     ctx.fillStyle = heightOffset ? '#ffd27d' : '#bbb';
     ctx.fillText('Height ' + (heightOffset >= 0 ? '+' : '') + Math.round(heightOffset * 1000) + ' mm', 748, 172);
@@ -1026,7 +1030,7 @@ function drawPanel() {
     }
     ctx.fillStyle = trial ? '#ffd23f' : '#bbb';
     ctx.font = 'bold 22px system-ui, sans-serif';
-    ctx.fillText('Blink / min', 639, 62);
+    ctx.fillText('Blink / sec', 639, 62);
     ctx.fillStyle = blinkOn ? '#fff' : '#888';
     ctx.font = 'bold 36px system-ui, sans-serif';
     ctx.fillText(blinkRate === 0 ? 'Off' : String(blinkRate), 639, 112);
@@ -1143,21 +1147,35 @@ let locked = false;
 let unlockHold = 0;          // seconds the Unlock button / A has been held (unlock needs a long press)
 const UNLOCK_HOLD = 0.8;
 let heightOffset = 0;        // metres along the surface normal (Raise / Lower)
+const fineNudge = { x: 0, y: 0 };   // mm moved with the fine-tune buttons since locking (shown on the panel)
 let flatCollect = null;      // Quick flat: several hits are averaged before placing
 // Blink: the locked image briefly disappears so you can compare your lines with the paper.
-let blinkRate = 20;          // blinks per minute, 0..50 (set only from the panel)
-try { const r = localStorage.getItem('traceAR.blink'); if (r !== null && +r >= 0 && +r <= 50) blinkRate = +r; } catch {}
+let blinkRate = 2;           // blinks per SECOND, 0..50 (set only from the panel)
+try { const r = localStorage.getItem('traceAR.blinkHz'); if (r !== null && +r >= 0 && +r <= 50) blinkRate = +r; } catch {}
+let flashWarnUntil = 0, flashWarned = false;   // one caution per session when going above 3 per second
+let frameRateWanted = null;
 let blinkOn = false;         // blinking right now
 let blinkTrialUntil = 0;     // after locking: blinks as a preview, stops at this time unless you set the speed
 let blinkClock = 0;
-// visibility at time t (s) within one blink cycle: a short gap (~0.4 s, never more than a third
-// of the cycle) at the end of each cycle, with quick fades so it isn't harsh
+// visibility at time t (s) within one blink cycle: off for half the cycle (at most 0.4 s),
+// with soft edges only when blinking slowly enough for fades to be visible
 function blinkVis(t, period) {
-  const off = Math.min(0.4, period / 3), fade = Math.min(0.08, off / 4), start = period - off;
+  const off = Math.min(0.4, period / 2), start = period - off;
+  const fade = period > 0.5 ? Math.min(0.08, off / 4) : 0;
   if (t < start) return 1;
-  if (t < start + fade) return 1 - (t - start) / fade;
-  if (t > period - fade) return (t - (period - fade)) / fade;
+  if (fade && t < start + fade) return 1 - (t - start) / fade;
+  if (fade && t > period - fade) return (t - (period - fade)) / fade;
   return 0;
+}
+// a blink needs a frame on and a frame off: above ~36/s ask the headset for its fastest display mode
+function updateFrameRateForBlink() {
+  if (!session || !session.supportedFrameRates || !session.updateTargetFrameRate) return;
+  const rates = [...session.supportedFrameRates];
+  const want = blinkOn && blinkRate > 36 ? Math.max(...rates) : null;
+  if (want === frameRateWanted) return;
+  frameRateWanted = want;
+  const target = want ?? (rates.includes(72) ? 72 : Math.min(...rates));
+  session.updateTargetFrameRate(target).catch(() => {});
 }
 let grabMode = true;
 let grab = null;           // { src, pc0: Vector2, c0: Vector2 }
@@ -1196,6 +1214,7 @@ function setLocked(v, src) {
   // Unlocking re-anchors at the frozen pose, so nothing jumps.
   if (locked && !v) reanchorRequest = true;
   // on lock: preview the blink for 5 s and point at the Blink control; it stops unless you change it
+  if (v && !locked) fineNudge.x = fineNudge.y = 0;
   if (v && !locked) { blinkOn = blinkRate > 0; blinkTrialUntil = performance.now() + 5000; blinkClock = 0; }   // highlight even if set to Off
   if (!v) { blinkOn = false; blinkTrialUntil = 0; imgUniforms.vis.value = 1; }
   locked = v;
@@ -1552,9 +1571,18 @@ function pressButton(b, src) {
     case 'op+': setOpacity(op + 0.05); break;
     case 'lock': if (!locked) setLocked(true, src); break;
     case 'h+': setHeight(heightOffset + 0.001); break;
+    case 'mv-l': case 'mv-r': case 'mv-u': case 'mv-d':
+      if (locked) {                              // fine-tune while locked: exactly 1 mm per step
+        const c = imgUniforms.center.value, st = 0.001;
+        if (b.id === 'mv-l') c.x -= st; else if (b.id === 'mv-r') c.x += st; else if (b.id === 'mv-u') c.y += st; else c.y -= st;
+        fineNudge.x += b.id === 'mv-l' ? -1 : b.id === 'mv-r' ? 1 : 0;
+        fineNudge.y += b.id === 'mv-u' ? 1 : b.id === 'mv-d' ? -1 : 0;
+      }
+      break;
     case 'bl-': case 'bl+': {
       blinkRate = Math.max(0, Math.min(50, blinkRate + (b.id === 'bl+' ? 1 : -1)));
-      try { localStorage.setItem('traceAR.blink', String(blinkRate)); } catch {}
+      try { localStorage.setItem('traceAR.blinkHz', String(blinkRate)); } catch {}
+      if (blinkRate > 3 && !flashWarned) { flashWarned = true; flashWarnUntil = performance.now() + 7000; }
       blinkTrialUntil = 0;                       // you chose: keep blinking at this speed
       blinkOn = locked && blinkRate > 0;         // blinking runs only while locked
       if (!blinkOn) imgUniforms.vis.value = 1;
@@ -1984,7 +2012,11 @@ function onFrame(t, frame) {
 
   for (const [src, a] of activeBtn) {
     if (!btnEnabled(a.btn)) { activeBtn.delete(src); continue; }
-    if (a.btn.kind === 'hold') holdButton(a.btn, dt);
+    if (a.btn.kind === 'hold' && !(locked && a.btn.group === 'fine')) holdButton(a.btn, dt);
+    else if (a.btn.kind === 'hold') {           // locked: held move buttons repeat 1 mm steps
+      a.next += dt;
+      if (a.next > 0.35) { a.next = 0.23; pressButton(a.btn, src); }
+    }
     else if (a.btn.kind === 'repeat') {
       a.next += dt;
       if (a.next > 0.35) { a.next = 0.23; pressButton(a.btn, src); }
@@ -1994,10 +2026,11 @@ function onFrame(t, frame) {
   // blinking (only while locked): shown ~70% of each cycle, hidden ~30%, with short fades
   if (blinkOn && blinkTrialUntil && performance.now() > blinkTrialUntil) { blinkOn = false; blinkTrialUntil = 0; }
   if (blinkOn && locked && blinkRate > 0) {
-    const period = 60 / blinkRate;
+    const period = 1 / blinkRate;
     blinkClock = (blinkClock + dt) % period;
     imgUniforms.vis.value = blinkVis(blinkClock, period);
   } else imgUniforms.vis.value = 1;
+  updateFrameRateForBlink();
 
   if (grab && mode === 'map' && !locked) updateGrab();
   handleControllers(dt);
