@@ -7,7 +7,7 @@ Open on the headset: **https://sghosh37.github.io/trace-ar/** (Meta Quest Browse
 - **Choose an image** → it opens floating in front of you. Hold the trigger to carry it, *Lay flat* to put it on a table, *Lock* to trace.
 - **Start tracing** → select a surface first (Lasso, Sweep, Detect, Quick flat), then the image is projected onto it.
 - **Lock** freezes the image in place; Raise / Lower and the move buttons still fine-tune it in 1 mm steps. Hold the button to unlock.
-- **Save spot / Restore spot** (while locked): tap two marks on the desk; after the headset sleeps, tap them again to put the image back.
+- **Resume tracing**: every lock is saved with a persistent anchor. If the headset ends the session (e.g. a long sleep), the start page shows *Resume tracing* — one press puts the image back on the same spot, locked.
 - Picked images are saved inside the app and appear in the in-headset **Image** gallery.
 
 Single-file WebXR app (three.js). Works offline after the first visit.
