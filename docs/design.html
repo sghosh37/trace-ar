@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trace AR Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a technical field manual — sticky contents rail on wide screens, one reading column, the app's own
+   status colours (pointer blue, lock green, blink yellow) used only where they mean the same thing as in the headset. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --ink: #17202a;
+  --muted: #5a6876;
+  --line: #d6dde4;
+  --accent: #1f6fd1;        /* pointer / surface blue */
+  --lock: #1f8a4c;          /* locked */
+  --blink: #a77a00;         /* blink / caution */
+  --code-bg: #eaeef2;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1419; --surface: #161d24; --ink: #e6ebf0; --muted: #96a3b0; --line: #26313c;
+  --accent: #5fa8ff; --lock: #4fd18a; --blink: #ffd23f; --code-bg: #1c252e; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0f1419; --surface: #161d24; --ink: #e6ebf0; --muted: #96a3b0; --line: #26313c;
+  --accent: #5fa8ff; --lock: #4fd18a; --blink: #ffd23f; --code-bg: #1c252e; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; } nav.toc { position: static !important; } }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 14px; }
+nav.toc .k { font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: t; }
+nav.toc li { counter-increment: t; }
+nav.toc a { display: grid; grid-template-columns: 26px 1fr; padding: 4px 0; color: var(--ink); text-decoration: none; }
+nav.toc a::before { content: counter(t, decimal-leading-zero); font: 12px/1.9 var(--mono); color: var(--muted); }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); outline: none; }
+main { min-width: 0; }
+header.top { border-bottom: 2px solid var(--ink); padding-bottom: 22px; margin-bottom: 8px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 800 clamp(38px, 6vw, 60px)/1.02 var(--display); font-stretch: 80%; letter-spacing: -.01em; margin: 10px 0 12px; text-wrap: balance; }
+.lede { font-size: 18px; max-width: 64ch; color: var(--ink); margin: 0; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 16px; font: 13px/1.5 var(--mono); color: var(--muted); }
+.facts b { color: var(--ink); font-weight: 500; }
+section { padding-top: 40px; scroll-margin-top: 20px; }
+h2 { font: 700 30px/1.15 var(--display); font-stretch: 85%; margin: 0 0 6px; text-wrap: balance; display: flex; gap: 12px; align-items: baseline; }
+h2 .n { font: 500 14px/1 var(--mono); color: var(--muted); }
+h3 { font: 600 17px/1.3 var(--body); margin: 22px 0 6px; }
+p, li { max-width: 68ch; }
+ul { padding-left: 20px; margin: 8px 0; }
+li { margin: 4px 0; }
+code { font: 13.5px/1.4 var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+.why { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; margin: 14px 0; color: var(--ink); max-width: 68ch; }
+.why.lock { border-color: var(--lock); }
+.why.blink { border-color: var(--blink); }
+.tag { display: inline-block; font: 500 11px/1 var(--mono); letter-spacing: .06em; padding: 4px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); vertical-align: 2px; }
+.tag.l { color: var(--lock); border-color: currentColor; }
+.tag.b { color: var(--blink); border-color: currentColor; }
+.tag.a { color: var(--accent); border-color: currentColor; }
+.tbl { overflow-x: auto; margin: 14px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 12px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--code-bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.diagram { margin: 16px 0; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
+.diagram .cap { font: 12px/1.4 var(--mono); color: var(--muted); margin-bottom: 8px; letter-spacing: .04em; }
+pre.mermaid { margin: 0; background: transparent; }
+.steps { counter-reset: s; list-style: none; padding: 0; display: grid; gap: 10px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; max-width: 72ch; }
+.steps li::before { content: counter(s); font: 600 13px/26px var(--mono); text-align: center; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--lock); color: var(--lock); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 14px 0; }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+.box h4 { margin: 0 0 6px; font: 600 15px/1.3 var(--body); }
+.box p { margin: 0; font-size: 14.5px; color: var(--muted); }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font: 13px/1.6 var(--mono); color: var(--muted); }
+a { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <div class="k">Contents</div>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#start">Start page &amp; images</a></li>
+    <li><a href="#xr">Headset session</a></li>
+    <li><a href="#select">Surface selection</a></li>
+    <li><a href="#build">Surface building</a></li>
+    <li><a href="#map">Image mapping</a></li>
+    <li><a href="#free">Floating image</a></li>
+    <li><a href="#controls">Controls</a></li>
+    <li><a href="#steady">Stability</a></li>
+    <li><a href="#lock">Lock &amp; fine-tune</a></li>
+    <li><a href="#blink">Blink</a></li>
+    <li><a href="#sleep">Sleep &amp; wake</a></li>
+    <li><a href="#panel">Control panel</a></li>
+    <li><a href="#limits">Known limits</a></li>
+  </ol>
+</nav>
+
+<main>
+<p style="margin:0 0 18px"><a href="../">← Open Trace AR</a></p>
+<header class="top">
+  <div class="eyebrow">Design overview · sghosh37/trace-ar</div>
+  <h1>Trace AR</h1>
+  <p class="lede">A web app for the Meta Quest 3S that projects a picture onto a real surface in passthrough, so you can trace it by hand. It runs in the Quest Browser, installs as an app, and works offline.</p>
+  <div class="facts"><span><b>1</b> HTML file + offline worker</span><span><b>three.js</b> r170</span><span><b>WebXR</b> immersive-ar</span><span>Reference space <b>local-floor</b></span></div>
+</header>
+
+<section id="overview">
+  <h2><span class="n">01</span>Overview</h2>
+  <p>The app has three stages: choose an image, put it on a surface, then lock it and trace. There are two ways in. Choosing an image on the start page opens it floating in front of you with no surface step. <b>Start tracing</b> goes through surface selection first and projects the image onto that surface.</p>
+  <div class="diagram"><div class="cap">App flow</div>
+<pre class="mermaid">
+flowchart LR
+  A[Start page] -->|Choose an image| F[Floating image<br/>in front of you]
+  A -->|Start tracing| S[Select surface<br/>Lasso · Sweep · Detect · Quick flat]
+  S --> B[Build surface mesh<br/>+ anchor it]
+  B --> M[Map image<br/>projected onto surface]
+  F --> M2[Position image<br/>carry · Lay flat]
+  M --> L[Lock and trace]
+  M2 --> L
+  L -->|hold Unlock 0.8 s| M
+  L -->|Save spot: tap 2 marks| L
+  W[Headset wakes] -->|auto line-up ≤ 15 cm<br/>or Restore spot| L
+  F -->|Surface…| S
+  M -->|Edit shape| S
+</pre></div>
+  <h3>What runs every frame</h3>
+  <p>One frame loop drives everything, in this order: head pose and panel position, controller rays and panel hover, the current step (scanning, detecting or drawing the lasso), the anchor (followed, or held still when locked), held panel buttons, blinking, grabbing, thumbsticks and buttons, then the panel redraw and render.</p>
+</section>
+
+<section id="start">
+  <h2><span class="n">02</span>Start page &amp; images</h2>
+  <ul>
+    <li><b>Choose an image:</b> the file picker accepts several images at once. The first one opens straight away in floating mode. If the browser blocks the automatic start, an <b>Open image in headset</b> button appears.</li>
+    <li><b>Start tracing (select a surface):</b> opens the headset view at the surface-selection step. An image is optional here, because it can be picked inside the headset.</li>
+    <li><b>Image library:</b> every picked image is saved inside the app (IndexedDB), up to 60, newest first. The in-headset <b>Image</b> gallery shows them six to a page. When the app is served from the PC, it also lists an <code>images/</code> folder.</li>
+    <li><b>Install &amp; offline:</b> a web app manifest and a service worker. App files load network-first, so updates arrive, and fall back to the cache when offline. three.js is cached first, because it never changes.</li>
+  </ul>
+</section>
+
+<section id="xr">
+  <h2><span class="n">03</span>Headset session</h2>
+  <p>The app asks the Quest Browser for an <code>immersive-ar</code> session (passthrough) with these features:</p>
+  <div class="tbl"><table>
+    <tr><th>Feature</th><th>Required?</th><th>Used for</th></tr>
+    <tr><td><code>hit-test</code></td><td>yes</td><td>Pointing at real surfaces. On Quest 3/3S this uses the depth sensor, so it hits real objects, not just flat planes.</td></tr>
+    <tr><td><code>local-floor</code></td><td>yes</td><td>The room coordinate system everything is placed in.</td></tr>
+    <tr><td><code>anchors</code></td><td>optional</td><td>Pinning the image's surface to the real world.</td></tr>
+    <tr><td><code>hand-tracking</code></td><td>optional</td><td>Pinch instead of trigger.</td></tr>
+    <tr><td><code>plane-detection</code>, <code>mesh-detection</code></td><td>optional</td><td>The Detect tool: objects from the headset's Space Setup.</td></tr>
+  </table></div>
+</section>
+
+<section id="select">
+  <h2><span class="n">04</span>Surface selection</h2>
+  <p>Step 1 has four tools, chosen on the panel. Each one produces a set of points on the real surface, plus, for Lasso and Detect, an outline.</p>
+  <div class="grid2">
+    <div class="box"><h4>Lasso <span class="tag a">default</span></h4><p>Tap to drop dots, joined by lines. Hold and drag to draw freehand. Tap near the yellow first dot (within 3 cm) or press Done to close. You can drag any dot within 2.2 cm, and tapping an edge inserts a dot there. Undo removes the last dot.</p></div>
+    <div class="box"><h4>Sweep</h4><p>Hold the trigger and paint over the surface. Hits are kept one per 4 mm cell, up to 20,000. Done needs at least 40.</p></div>
+    <div class="box"><h4>Detect</h4><p>Shows planes and meshes from Space Setup with their labels (Table, Wall…). The picked object's outline loads as editable lasso dots: a plane's polygon, or the convex outline of the mesh faces facing the same way (within 35°).</p></div>
+    <div class="box"><h4>Quick flat</h4><p>One tap on flat paper. About 18 hits over a quarter second are combined: median position and average normal. That gives a flat 1.2 m patch.</p></div>
+  </div>
+  <h3>Measuring inside a lasso automatically</h3>
+  <p>After a lasso closes, the app shoots a grid of fixed depth rays from your head into the outline: the densest of 16×16, 13×13, 11×11 or 9×9 that stays under about 140 rays. Hits more than 30 cm off the outline's plane (hands, background) are dropped. It stops after 60 frames or when all rays have answered.</p>
+</section>
+
+<section id="build">
+  <h2><span class="n">05</span>Surface building</h2>
+  <p>Points become a <b>height field</b> seen from a "projector" frame:</p>
+  <ul>
+    <li><b>Frame:</b> origin at the points' centroid. Z is the average normal, turned to face you. X follows your head's right direction, and Y = Z × X. On a table, the image's top points away from you; on a wall, it points up.</li>
+    <li><b>Grid:</b> step = max(5 mm, extent ÷ 80). Each node takes the median height of the points nearest it.</li>
+    <li><b>Valid area:</b> inside the lasso, plus half a grid step. Without a lasso, within 2.5 cm of a sample.</li>
+    <li><b>Gaps</b> are filled from neighbours, then the field is smoothed three times with a 3×3 average.</li>
+  </ul>
+  <p class="why">Tested in simulation: a mug-shaped surface came out within about 0.3 mm inside the lasso and about 2 mm at its edge.</p>
+</section>
+
+<section id="map">
+  <h2><span class="n">06</span>Image mapping</h2>
+  <p>The image isn't a flat plane. It's <b>projected</b> onto the surface mesh by a custom shader, like a slide projector. Each mesh vertex carries its projector-plane coordinate, and the shader works out where the picture lands:</p>
+  <div class="tbl"><table>
+    <tr><th>Uniform</th><th>Meaning</th></tr>
+    <tr><td><code>center</code></td><td>Image centre on the surface (moved by Left/Right/Up/Down, grab and left stick).</td></tr>
+    <tr><td><code>rot</code></td><td>Turn.</td></tr>
+    <tr><td><code>size</code></td><td>Width × height in metres (width from the start page × zoom).</td></tr>
+    <tr><td><code>opacity</code></td><td>Your opacity setting.</td></tr>
+    <tr><td><code>vis</code></td><td>Blink visibility, 0–1.</td></tr>
+    <tr><td><code>border</code></td><td>Blue outline, hidden when locked.</td></tr>
+  </table></div>
+  <p><b>Raise / Lower</b> moves the whole mesh along the surface normal, in 1 mm steps, up to ±50 mm.</p>
+</section>
+
+<section id="free">
+  <h2><span class="n">07</span>Floating image</h2>
+  <ul>
+    <li>Opens about 50 cm in front of you and 10 cm below eye level, facing you.</li>
+    <li><b>Carry:</b> hold the trigger (Grab on) or the grip. The image follows your hand's full position and tilt, smoothed by the Steady setting.</li>
+    <li><b>Lay flat / Stand up:</b> turns it to lie on a table or face you.</li>
+    <li>When you let go or turn it, the anchor is recreated at the new place. <b>Surface…</b> switches to surface selection.</li>
+  </ul>
+</section>
+
+<section id="controls">
+  <h2><span class="n">08</span>Controls</h2>
+  <div class="tbl"><table>
+    <tr><th>Input</th><th>Action</th><th>When locked</th></tr>
+    <tr><td>Trigger / pinch</td><td>Press panel buttons; place dots; hold on the image to slide it</td><td>Panel only</td></tr>
+    <tr><td>Grip (hold)</td><td>Slide or carry the image</td><td>Blocked</td></tr>
+    <tr><td>Right stick ↕</td><td>Zoom</td><td>Blocked</td></tr>
+    <tr><td>Left stick</td><td>Move across the surface</td><td>Blocked</td></tr>
+    <tr><td>Left grip + left stick ↕</td><td>Raise / lower</td><td>Blocked</td></tr>
+    <tr><td>A / B</td><td>Opacity − / + (5%, hold repeats)</td><td><span class="tag l">works</span></td></tr>
+    <tr><td>X / Y</td><td>Opacity − / +</td><td><span class="tag l">works</span></td></tr>
+    <tr><td>Left stick click</td><td>Hide / show panel</td><td><span class="tag l">works</span></td></tr>
+  </table></div>
+</section>
+
+<section id="steady">
+  <h2><span class="n">09</span>Stability</h2>
+  <h3>Pointer smoothing (Steady: Low / Medium / High)</h3>
+  <p>The aim dot uses a <b>One Euro filter</b>. It smooths strongly when your hand is still and catches up when you move. In simulation, High cut 3 mm of hand and depth jitter to about 0.4 mm, trailing about 1–2 cm while drawing freehand.</p>
+  <div class="tbl"><table>
+    <tr><th>Level</th><th>Min cutoff</th><th>Speed factor</th></tr>
+    <tr><td>Low</td><td class="num">2.5 Hz</td><td class="num">4</td></tr>
+    <tr><td>Medium</td><td class="num">1.0 Hz</td><td class="num">5</td></tr>
+    <tr><td>High (default)</td><td class="num">0.45 Hz</td><td class="num">8</td></tr>
+  </table></div>
+  <p><b>Trigger twitch:</b> a tap uses where you pointed about 120 ms <i>before</i> the press, because pulling the trigger nudges the controller.</p>
+  <h3>Anchor following (unlocked)</h3>
+  <p>While unlocked, the surface follows its anchor with three rules: changes under <b>4 mm and 0.7°</b> are ignored, bigger ones are eased in at <b>12% per frame</b>, and a jump over 10 cm or about 11° snaps immediately.</p>
+</section>
+
+<section id="lock">
+  <h2><span class="n">10</span>Lock &amp; fine-tune</h2>
+  <div class="diagram"><div class="cap">Lock states</div>
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> Unlocked
+  Unlocked --> Locked: tap Lock (panel)
+  Locked --> Unlocked: hold Unlock 0.8 s
+  state Locked {
+    [*] --> Frozen
+    Frozen --> Frozen: small anchor change (under 5 cm / 3°) ignored
+    Frozen --> Realign: tracking break (sleep, headset off, lost tracking)
+    Frozen --> Relocated: big anchor jump (over 5 cm / 3°)
+    Realign --> Frozen: anchor steady 0.3 s, lined up once (only if under 15 cm / 15°)
+    Frozen --> Restored: Restore spot (tap the 2 saved marks)
+    Restored --> Frozen: image moved onto the marks, re-anchored
+    Relocated --> Frozen: image moved with the anchor
+  }
+</pre></div>
+  <ul>
+    <li><b>Freezes the pose.</b> The image's position no longer follows the anchor's small corrections, which are what caused the drift while tracing.</li>
+    <li><b>Hold to unlock (0.8 s)</b>, with a yellow progress bar, so a bump or a pencil-grip pinch can't release it. Unlocking recreates the anchor at the frozen pose, so nothing jumps.</li>
+    <li><b>Fine-tune while locked:</b> Raise / Lower and Up / Down / Left / Right still work, in exact <b>1 mm</b> steps (hold repeats). The panel shows the nudge total since locking. Everything else stays frozen.</li>
+    <li><b>Panel while locked:</b> the fourth row changes. Reset, Lay flat and Rescan are hidden. In their place are <b>Save spot</b> (or <b>Save again</b> once saved) and <b>Restore spot</b>, which stays greyed out until a spot is saved. During marking, the pressed button turns into <b>Cancel</b>.</li>
+  </ul>
+  <h3>Status line while locked (highest priority first)</h3>
+  <div class="tbl"><table>
+    <tr><th>Shows</th><th>When</th></tr>
+    <tr><td>Caution: fast flashing can trigger seizures</td><td>First time Blink goes above 3/s (7 s)</td></tr>
+    <tr><td>LOCKED · Blink −/+ sets speed (5s)</td><td>Blink preview just after locking</td></tr>
+    <tr><td>Spot saved · Image restored · tap-again messages</td><td>A few seconds after Save / Restore</td></tr>
+    <tr><td>Save spot / Restore spot: tap mark 1 of 2 on the desk</td><td>While marking</td></tr>
+    <tr><td>Woke up · image off? Press Restore spot</td><td>15 s after a wake (or “Hold Unlock and re-place” if no spot is saved)</td></tr>
+    <tr><td>LOCKED · gap? Raise/Lower or nudge 1 mm</td><td>Otherwise</td></tr>
+  </table></div>
+  <p class="why lock">Closing a gap: tilt your head. If the gap between your line and the image changes, it's height, so use Raise / Lower. If it stays the same, it's position, so nudge.</p>
+</section>
+
+<section id="blink">
+  <h2><span class="n">11</span>Blink</h2>
+  <ul>
+    <li>Locking starts a <b>5-second preview</b> of blinking. The <b>Blink / sec</b> control glows and the status counts down. If you don't touch it, blinking stops. Changing the value keeps it blinking at that speed until you unlock.</li>
+    <li>Range <b>0–50 per second</b> (0 = off), set on the panel only, and remembered.</li>
+    <li>Each cycle hides the image for half the cycle (at most 0.4 s), with soft edges at slow speeds.</li>
+    <li>A blink needs a frame on and a frame off, so above <b>36/s</b> the app asks for the headset's 120 Hz mode. In simulation, 50/s showed as about 22/s at 72 Hz and the full 50 at 120 Hz.</li>
+  </ul>
+  <p class="why blink">Fast flashing (about 3–30 per second) can trigger seizures in people with photosensitive epilepsy. The panel shows a one-time caution above 3 per second.</p>
+</section>
+
+<section id="sleep">
+  <h2><span class="n">12</span>Sleep &amp; wake while locked</h2>
+  <p>When the headset sleeps for a few minutes, it loses track of where it is. On waking it has to find its place in the room again. That often <b>moves the room coordinate system's origin</b>, so the same spot on your paper ends up with different coordinates. A locked image that just kept its old coordinates would end up somewhere else: behind you or under the floor. That was the bug where the panel came back but the image didn't.</p>
+  <p>The fix uses the anchor, which the headset keeps tied to the real world through relocation. The app remembers the image's position <i>relative to the anchor</i> at the moment you lock. After any break in tracking it lines the image up with the anchor once, however small the shift. A 1–2 inch vertical shift from the floor being re-estimated was the case the first version missed, because it only reacted to shifts over 5 cm. During continuous tracing, small corrections stay ignored, so the drift fix still holds.</p>
+  <div class="diagram"><div class="cap">What happens across sleep and wake</div>
+<pre class="mermaid">
+sequenceDiagram
+  participant U as You
+  participant App as Trace AR
+  participant Q as Quest tracking
+  U->>App: Lock
+  App->>Q: Where is the anchor? (first frame after lock)
+  Q-->>App: A₀
+  Note over App: remember A₀ and<br/>rel = A₀⁻¹ × image pose
+  loop every frame while locked
+    App->>Q: Where is the anchor now?
+    Q-->>App: A
+    alt A within 5 cm and 3° of A₀
+      Note over App: ignore (no drift)
+    else bigger jump
+      Note over App: image = A × rel, then A₀ = A
+    end
+  end
+  U->>Q: Headset sleeps (no frames, tracking stops)
+  Note over App: break noticed (frame gap over 1 s)
+  U->>Q: Headset wakes
+  Q->>Q: re-finds the room, re-estimates the floor
+  Q-->>App: A (new coordinates, same real spot)
+  Note over App: wait until A is steady for 0.3 s
+  Note over App: line up once: image = A × rel, whatever the size of the shift
+</pre></div>
+  <ol class="steps">
+    <li><span><b>At lock:</b> on the first frame after locking, the app reads the anchor pose <code>A₀</code> and stores <code>rel = A₀⁻¹ × image pose</code>: where the image sits relative to the anchor.</span></li>
+    <li><span><b>While tracing:</b> every frame it compares the anchor pose <code>A</code> with <code>A₀</code>. Differences under 5 cm and 3° are ignored, so the image stays frozen.</span></li>
+    <li><span><b>During sleep:</b> the anchor can't be tracked, so <code>getPose</code> returns nothing. The app leaves the image where it is and doesn't guess.</span></li>
+    <li><span><b>Noticing the break:</b> any of these mark a tracking break: no frames for over a second (sleep or pause), the session being hidden, the head position being lost or only estimated, or a room-reset notice.</span></li>
+    <li><span><b>On wake:</b> the headset re-finds the room and often re-estimates the floor, so coordinates can shift by a few centimetres, mostly up or down. Once the anchor's position has been steady for about 0.3 s, the app lines the image up <i>once</i>: <code>image = A × rel</code>, <code>A₀ = A</code>. It does this for <b>any</b> size of shift, even 1–2 cm. The image lands back on your paper, with your fine-tune nudges and Raise/Lower kept.</span></li>
+    <li><span><b>Big jumps any time:</b> if the anchor jumps more than 5 cm or 3° without a noticed break, the image follows it too.</span></li>
+    <li><span><b>No anchors on the device:</b> the room coordinate system fires a <code>reset</code> event with the transform of the new origin. The app applies its inverse to the image.</span></li>
+  </ol>
+  <h3>Safety limit on automatic corrections</h3>
+  <p>Right after waking, the anchor can briefly report a wrong position before the headset has really relocated. So an automatic correction is only applied if it moves the image by at most <b>15 cm and 15°</b>. Anything bigger is treated as a glitch: the image stays where it is, and the panel shows <i>“Woke up · image off? Press Restore spot”</i> for 15 seconds.</p>
+  <h3>Save spot / Restore spot (manual, always reliable)</h3>
+  <p>While locked, <b>Save spot</b> asks for two taps on marks you can find again, such as two corners of the paper. Each tap averages 12 frames of depth hits. The marks are stored in the image surface's own coordinates, so they move with the image and are independent of the room's coordinates.</p>
+  <p>After waking, <b>Restore spot</b> asks for the same two marks in the same order. The app then works out the turn (about the surface normal only, so the image never tilts) and the shift that move the saved marks onto the new taps, and applies it to the image. Height comes from the new taps on the real paper, so a re-estimated floor is corrected too. The result is re-anchored. If the two marks are less than 5 cm apart, or their spacing differs from the saved one by more than 2.5 cm, the app asks you to tap again.</p>
+  <p class="why">Tested in simulation: a wake shift of 4 cm down, 3 cm sideways and a 7° turn, restored from two taps with ±2 mm hand error, put the image back within about 1 mm (0.9 mm in height).</p>
+</section>
+
+<section id="panel">
+  <h2><span class="n">13</span>Control panel</h2>
+  <ul>
+    <li><b>Drawing:</b> a 40 cm panel drawn on a canvas texture. Its buttons change with the step: scan, map or gallery. It's redrawn only when something on it changes.</li>
+    <li><b>Placement:</b> it sits about 50 cm ahead and 12 cm below eye level. It catches up when you turn away by more than about 49°, and always faces you.</li>
+    <li><b>Moving it:</b> four corner grips just outside the panel. Point at one, hold the trigger or pinch, and drag. A moved panel stays where you leave it and still faces you.</li>
+    <li><b>Hide / show:</b> the Hide button or a left-stick click. While hidden, a <b>Show panel</b> button floats above the left controller. Showing the panel brings it back in front of you, following your head again.</li>
+  </ul>
+  <h3>Panel layout in the map step</h3>
+  <div class="tbl"><table>
+    <tr><th>Row</th><th>Unlocked</th><th>Locked</th></tr>
+    <tr><td class="num">1</td><td colspan="2">Opacity − / % / + · Blink / sec − value +</td></tr>
+    <tr><td class="num">2</td><td>Left · Right · Up · Down (glide) · Raise · Lower</td><td>Same six buttons in 1 mm steps</td></tr>
+    <tr><td class="num">3</td><td>Size − · Size + · Turn left · Turn right</td><td>Shown but disabled</td></tr>
+    <tr><td class="num">4</td><td>Lock · Reset · Lay flat (floating only) · Rescan / Edit shape / Surface…</td><td>Hold to unlock · Save spot · Restore spot</td></tr>
+    <tr><td class="num">5</td><td colspan="2">Grab: On/Off · Image · Hide · Quit (Image is disabled while locked)</td></tr>
+  </table></div>
+</section>
+
+<section id="limits">
+  <h2><span class="n">14</span>Known limits</h2>
+  <div class="tbl"><table>
+    <tr><th>Limit</th><th>Cause</th><th>What helps</th></tr>
+    <tr><td>Image seems to slide when you tilt your head</td><td>Depth error: the surface sits a few mm above or below the paper (parallax)</td><td>Raise / Lower until head sway shows no slide</td></tr>
+    <tr><td>Paper wobbles when your hand moves in</td><td>The Quest rebuilds passthrough from its own depth guess, which bends around your hand</td><td>Platform limit. Even lighting; get the height right</td></tr>
+    <tr><td>Small objects not in Detect</td><td>Detect only knows what Space Setup recorded</td><td>Lasso or Sweep</td></tr>
+    <tr><td>Image off or gone after waking</td><td>The headset re-estimated the room; an automatic correction over 15 cm is ignored as a likely glitch</td><td>Restore spot (tap the 2 saved marks), or hold Unlock and re-place</td></tr>
+  </table></div>
+</section>
+
+<footer>Trace AR · index.html, sw.js, manifest.webmanifest, icons/ · This page: docs/design.html · Written from the code as of 31 Oct 2026 (Save spot / Restore spot).</footer>
+</main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+  // GitHub Pages copy: draw the diagrams (the Claude page does this by itself)
+  const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({ startOnLoad: true, theme: dark ? 'dark' : 'default', securityLevel: 'strict' });
+</script>
+</body>
+</html>
