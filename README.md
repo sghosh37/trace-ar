@@ -15,3 +15,11 @@ Single-file WebXR app (three.js). Works offline after the first visit.
 ## Design
 
 The full feature-by-feature design, including how a locked image is kept in place through headset sleep, is in [docs/design.html](docs/design.html) — online at **https://sghosh37.github.io/trace-ar/docs/design.html**.
+
+## License
+
+Copyright (C) 2026 Suman Ghosh
+
+Trace AR is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License v3.0** (or, at your option, any later version), as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY. See [LICENSE](LICENSE) for the full text.
+
+Third-party code: [three.js](https://threejs.org/) (MIT License) is loaded from the jsDelivr CDN at run time and is not part of this repository.
