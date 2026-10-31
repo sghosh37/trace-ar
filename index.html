@@ -67,6 +67,7 @@
           Other tools: <b>Sweep</b> (hold the trigger and paint over the surface) and <b>Quick flat</b> (tap once on flat paper).</li>
       <li><b>Pick the image.</b> Press <b>Image</b> on the panel to open the gallery. It shows pictures from the <code>images</code> folder next to this app on your PC (Downloads\TraceAR\images), plus any picked on this page.</li>
       <li><b>Map the image.</b> The image is projected onto the scanned shape, so it bends over curves. Hold the trigger on the surface to slide it around; use the panel to resize, turn and set opacity.</li>
+      <li><b>Move the panel:</b> point at one of its four corner handles, hold the trigger (or pinch) and drag. It stays where you leave it. Hide and show it again to bring it back in front of you.</li>
       <li><b>Hide the panel</b> with <b>Hide</b> (or click the left thumbstick). A small <b>Show panel</b> button floats above your left controller to bring it back. <b>Steady: Low / Medium / High</b> on the scan panel sets how much the pointer is smoothed.</li>
       <li>Sway your head a little: if the image slides over the paper, press <b>Raise</b> / <b>Lower</b> (1 mm steps) until it stays put — then it sits exactly on the paper.</li>
       <li><b>Gap between your line and the image?</b> Tilt your head: if the gap changes, use <b>Raise / Lower</b>; if it stays the same, nudge with <b>Up / Down / Left / Right</b>. These six buttons keep working while locked, in exact 1 mm steps.</li>
@@ -746,8 +747,43 @@ function drawChip(hover) {
   chipTex.needsUpdate = true;
 }
 drawChip(false);
+// ---- move the panel by its corners ----
+const DRAG_BTN = { id: 'drag', label: '', kind: 'drag', group: 'always' };
+const handleCanvas = document.createElement('canvas');
+handleCanvas.width = handleCanvas.height = 96;
+{
+  const c = handleCanvas.getContext('2d');
+  c.strokeStyle = '#fff'; c.lineWidth = 16; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(12, 84); c.lineTo(12, 12); c.lineTo(84, 12); c.stroke();   // an "L" for the top-left corner
+}
+const handleTex = new THREE.CanvasTexture(handleCanvas);
+const handles = [];
+for (let k = 0; k < 4; k++) {     // top-left, top-right, bottom-right, bottom-left
+  const h = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.03),
+    new THREE.MeshBasicMaterial({ map: handleTex, transparent: true, depthTest: false, depthWrite: false, color: 0x9fb4cc }));
+  const sx = k === 0 || k === 3 ? -1 : 1, sy = k < 2 ? 1 : -1;
+  h.position.set(sx * (PANEL_W / 2 + 0.012), sy * (PANEL_H / 2 + 0.012), 0.001);
+  h.rotation.z = [0, -Math.PI / 2, Math.PI, Math.PI / 2][k];
+  h.renderOrder = 11;
+  panel.add(h);
+  handles.push(h);
+}
+let panelPinned = false;          // moved by the user: stays put (still turns to face you)
+let panelDrag = null;             // { src, dist, offset }
+const handleHit = new Map();      // inputSource -> { point, distance } on a handle this frame
+function updatePanelDrag(frame, ref) {
+  if (!panelDrag) return;
+  const p = frame.getPose(panelDrag.src.targetRaySpace, ref);
+  if (!p) return;
+  tmpM.fromArray(p.transform.matrix);
+  const o = new THREE.Vector3().setFromMatrixPosition(tmpM), d = new THREE.Vector3(0, 0, -1).transformDirection(tmpM);
+  panel.position.copy(o.addScaledVector(d, panelDrag.dist)).add(panelDrag.offset);
+  panel.lookAt(headPos);
+}
+
 function setPanelHidden(v) {
   panelHidden = v;
+  if (!v) { panelPinned = false; panelInit = false; panelDrag = null; }   // showing again: back in front of you
   panel.visible = !v && !!session;
   chip.visible = v && !!session;
   hoverBtn.clear(); activeBtn.clear();
@@ -1490,7 +1526,8 @@ async function startSession(kind, auto = false) {
   }
   await renderer.xr.setSession(session);
   session.addEventListener('end', onEnd);
-  try { renderer.xr.getReferenceSpace().addEventListener('reset', onRefReset); } catch {}
+  try { renderer.xr.getReferenceSpace().addEventListener('reset', (e) => { markTrackingBreak(); onRefReset(e); }); } catch {}
+  session.addEventListener('visibilitychange', () => { if (session && session.visibilityState !== 'visible') markTrackingBreak(); });
   session.addEventListener('inputsourceschange', onInputs);
   session.addEventListener('selectstart', onSelectStart);
   session.addEventListener('selectend', onSelectEnd);
@@ -1501,6 +1538,7 @@ async function startSession(kind, auto = false) {
   freePending = startMode === 'free';
   lastTime = 0;
   panelInit = false;
+  panelPinned = false; panelDrag = null;
   panelKey = '';
   panelHidden = false;
   panel.visible = true;
@@ -1539,6 +1577,11 @@ function onSelectStart(e) {
   const src = e.inputSource;
   selecting.add(src);
   const b = hoverBtn.get(src);
+  if (b === DRAG_BTN) {
+    const hh = handleHit.get(src);
+    if (hh) { panelDrag = { src, dist: hh.distance, offset: panel.position.clone().sub(hh.point) }; pulse(src, 0.3, 25); }
+    return;
+  }
   if (b) {
     if (!btnEnabled(b)) return;
     activeBtn.set(src, { btn: b, next: 0 });
@@ -1563,6 +1606,7 @@ function onSelectEnd(e) {
   scanning.delete(src);
   activeBtn.delete(src);
   if (lassoDrawSrc === src) { lassoDrawSrc = null; lassoDrag = -1; }
+  if (panelDrag && panelDrag.src === src) { panelDrag = null; panelPinned = true; pulse(src, 0.2, 20); }
   endGrab(src);
 }
 
@@ -1792,8 +1836,8 @@ function updatePanelPose(viewer, dt) {
   const dist = panel.position.distanceTo(headPos);
   if (!panelInit) { panelTarget.copy(desired); panel.position.copy(desired); panelInit = true; }
   else if (angle > 0.85 || dist > 1.1 || dist < 0.25) panelTarget.copy(desired);
-  if (activeBtn.size === 0 && scanning.size === 0 && !lassoDrawSrc) panel.position.lerp(panelTarget, Math.min(1, dt * 4));
-  panel.lookAt(headPos);
+  if (!panelPinned && !panelDrag && activeBtn.size === 0 && scanning.size === 0 && !lassoDrawSrc) panel.position.lerp(panelTarget, Math.min(1, dt * 4));
+  if (!panelDrag) panel.lookAt(headPos);
 }
 
 function updateChip(frame, ref) {
@@ -1811,6 +1855,10 @@ function updateChip(frame, ref) {
   chip.lookAt(headPos);
 }
 
+function updateHandleLook() {
+  const hot = !!panelDrag || [...hoverBtn.values()].includes(DRAG_BTN);
+  for (const h of handles) h.material.color.set(hot ? 0x4fa3ff : 0x9fb4cc);
+}
 function updateRays(frame, ref) {
   for (const [src, line] of rays) {
     const p = frame.getPose(src.targetRaySpace, ref);
@@ -1818,9 +1866,14 @@ function updateRays(frame, ref) {
     tmpM.fromArray(p.transform.matrix);
     raycaster.set(new THREE.Vector3().setFromMatrixPosition(tmpM), new THREE.Vector3(0, 0, -1).transformDirection(tmpM));
     let hit = null;
+    handleHit.delete(src);
     if (panel.visible) {
-      hit = raycaster.intersectObject(panel, false)[0] || null;
-      hoverBtn.set(src, hit && hit.uv ? btnAt(hit.uv) : null);
+      const hh = raycaster.intersectObjects(handles, false)[0];
+      if (hh) { hit = hh; hoverBtn.set(src, DRAG_BTN); handleHit.set(src, { point: hh.point.clone(), distance: hh.distance }); }
+      else {
+        hit = raycaster.intersectObject(panel, false)[0] || null;
+        hoverBtn.set(src, hit && hit.uv ? btnAt(hit.uv) : null);
+      }
     } else if (chip.visible) {
       hit = raycaster.intersectObject(chip, false)[0] || null;
       hoverBtn.set(src, hit ? CHIP_BTN : null);
@@ -1834,6 +1887,8 @@ function updateRays(frame, ref) {
 // sleep or lost tracking the headset re-finds the room and its coordinates can move a lot:
 // then the anchor jumps, and the image must jump with it or it ends up somewhere else.
 let lockBase = null;          // { a: anchor pose at lock, rel: image pose relative to that anchor pose }
+const resync = { pending: false, prev: null, stable: 0 };   // re-align once after a tracking break
+function markTrackingBreak() { resync.pending = true; resync.prev = null; resync.stable = 0; }
 const RELOC_DIST = 0.05, RELOC_ANGLE = 0.05;   // 5 cm / ~3 degrees
 function followRelocalisation(frame, ref) {
   if (!anchor) return;
@@ -1846,6 +1901,22 @@ function followRelocalisation(frame, ref) {
   }
   const pA = new THREE.Vector3(), qA = new THREE.Quaternion(), pB = new THREE.Vector3(), qB = new THREE.Quaternion(), sc = new THREE.Vector3();
   a.decompose(pA, qA, sc); lockBase.a.decompose(pB, qB, sc);
+  // After a break in tracking (sleep, headset off the face, tracking lost) the headset re-finds the
+  // room and may re-estimate the floor, so coordinates can shift by a few cm. Line up with the anchor
+  // once — whatever the size of the shift — as soon as its position has settled.
+  if (resync.pending) {
+    if (resync.prev && pA.distanceTo(resync.prev.p) < 0.002 && qA.angleTo(resync.prev.q) < 0.005) resync.stable++;
+    else resync.stable = 0;
+    resync.prev = { p: pA.clone(), q: qA.clone() };
+    if (resync.stable >= 20) {                       // ~0.3 s steady
+      surface.matrix.copy(a).multiply(lockBase.rel);
+      surface.updateMatrixWorld(true);
+      lockBase.a = a;
+      resync.pending = false; resync.prev = null; resync.stable = 0;
+    }
+    return;
+  }
+  // while tracking continuously: small corrections are ignored (no drift), big jumps are followed
   if (pA.distanceTo(pB) > RELOC_DIST || qA.angleTo(qB) > RELOC_ANGLE) {
     surface.matrix.copy(a).multiply(lockBase.rel);   // put the image back on the same real-world spot
     surface.updateMatrixWorld(true);
@@ -1893,14 +1964,18 @@ function addScanPoint(pose) {
 function onFrame(t, frame) {
   if (!frame || !session) return;
   lastFrame = frame;
+  if (lastTime && t - lastTime > 1000) markTrackingBreak();      // no frames for over a second: slept or paused
   const dt = lastTime ? Math.min((t - lastTime) / 1000, 0.1) : 0;
   lastTime = t;
   const ref = renderer.xr.getReferenceSpace();
 
   const viewer = frame.getViewerPose(ref);
+  if (!viewer || viewer.emulatedPosition) markTrackingBreak();   // tracking lost
   if (viewer) updatePanelPose(viewer, dt);
   if (chip.visible) updateChip(frame, ref);
+  updatePanelDrag(frame, ref);
   updateRays(frame, ref);
+  updateHandleLook();
   if (chip.visible) drawChip([...hoverBtn.values()].includes(CHIP_BTN));
 
   reticle.visible = false;
