@@ -69,16 +69,17 @@
       <li><b>Map the image.</b> The image is projected onto the scanned shape, so it bends over curves. Hold the trigger on the surface to slide it around; use the panel to resize, turn and set opacity.</li>
       <li><b>Hide the panel</b> with <b>Hide</b> (or click the left thumbstick). A small <b>Show panel</b> button floats above your left controller to bring it back. <b>Steady: Low / Medium / High</b> on the scan panel sets how much the pointer is smoothed.</li>
       <li>Sway your head a little: if the image slides over the paper, press <b>Raise</b> / <b>Lower</b> (1 mm steps) until it stays put — then it sits exactly on the paper.</li>
-      <li><b>Lock</b> and trace. A locked image is frozen in place (to unlock, hold the button for a moment). Opacity still works while locked.</li>
+      <li><b>Lock</b> (panel) and trace. A locked image is frozen in place (to unlock, hold the button for a moment). Opacity still works while locked.</li>
+      <li><b>Blink:</b> after locking, the image blinks for 5 s as a preview. Set <b>Blink / min</b> on the panel (0 = off, up to 50) to keep it blinking — handy for checking your lines against the paper.</li>
     </ol>
     <h3>Controller shortcuts (map step)</h3>
     <table>
       <tr><td>Trigger hold</td><td>Slide the image across the surface (Grab On)</td></tr>
       <tr><td>Grip hold</td><td>Slide the image (even with Grab Off)</td></tr>
       <tr><td>Left stick</td><td>Nudge the image</td></tr>
-      <tr><td>Right stick ↕ / ↔</td><td>Size / turn</td></tr>
+      <tr><td>Right stick ↕</td><td>Zoom (size)</td></tr>
+      <tr><td>A / B</td><td>Opacity down / up (hold to keep changing)</td></tr>
       <tr><td>X / Y</td><td>Opacity down / up</td></tr>
-      <tr><td>A</td><td>Lock · hold A to unlock</td></tr>
       <tr><td>Left grip + left stick ↕</td><td>Raise / lower the image (sit it exactly on the paper)</td></tr>
       <tr><td>Left stick click</td><td>Hide / show the control panel (any step)</td></tr>
     </table>
@@ -639,6 +640,7 @@ const imgUniforms = {
   rot: { value: 0 },
   size: { value: new THREE.Vector2(0.21, 0.3) },
   border: { value: 1 },
+  vis: { value: 1 },          // blink: 1 = shown, 0 = hidden
 };
 const imgMat = new THREE.ShaderMaterial({
   uniforms: imgUniforms,
@@ -659,6 +661,7 @@ const imgMat = new THREE.ShaderMaterial({
     uniform float rot;
     uniform vec2 size;
     uniform float border;
+    uniform float vis;
     varying vec2 vPc;
     void main() {
       vec2 d = vPc - center;
@@ -669,7 +672,7 @@ const imgMat = new THREE.ShaderMaterial({
       vec4 col = texture2D(map, uv);
       vec2 e = min(uv, 1.0 - uv) * size;
       if (border > 0.5 && min(e.x, e.y) < 0.003) col = vec4(0.06, 0.37, 1.0, 1.0);
-      gl_FragColor = vec4(col.rgb, col.a * opacity);
+      gl_FragColor = vec4(col.rgb, col.a * opacity * vis);
       #include <colorspace_fragment>
     }`,
 });
@@ -780,6 +783,8 @@ const BTN_PICK = [];
   const a = mk(BTN_MAP);
   a('op-', '−', 150, 70, 110, 80, 'repeat', 'always');
   a('op+', '+', 400, 70, 110, 80, 'repeat', 'always');
+  a('bl-', '−', 530, 77, 66, 70, 'repeat', 'always');
+  a('bl+', '+', 682, 77, 66, 70, 'repeat', 'always');
   [['mv-l', 'Left'], ['mv-r', 'Right'], ['mv-u', 'Up'], ['mv-d', 'Down']].forEach(([id, l], i) =>
     a(id, l, 20 + i * 123, 190, 113, 80, 'hold', 'adjust'));
   // move the image towards / away from you, along the surface normal, 1 mm per press
@@ -903,7 +908,7 @@ let panelKey = '';
 function drawPanel() {
   const hovered = new Set([...hoverBtn.values()].filter(Boolean));
   const pressedIds = new Set([...activeBtn.values()].map((a) => a.btn.id));
-  const key = [mode, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
+  const key = [mode, blinkRate, blinkOn, blinkTrialUntil > performance.now() ? Math.floor(performance.now() / 80) : 0, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
     thumbRev, galleryPage, img.name, gallery.length,
     [...hovered].map((b) => b.id).join(), [...pressedIds].join()].join('|');
   if (key === panelKey) return;
@@ -928,6 +933,7 @@ function drawPanel() {
   } else {
     status = !img.texture ? 'Press Image to choose a picture'
            : freeMode && !locked ? (grab ? 'Carrying · release trigger to drop' : 'Hold trigger to carry the image · then Lock')
+           : locked && blinkTrialUntil > performance.now() ? `LOCKED · Blink −/+ sets speed (${Math.ceil((blinkTrialUntil - performance.now()) / 1000)}s)`
            : locked ? 'LOCKED · trace away'
            : grab ? 'Sliding · release trigger to drop'
            : grabMode ? 'Step 2 · Hold trigger on surface to slide image'
@@ -1011,8 +1017,19 @@ function drawPanel() {
     ctx.font = 'bold 40px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(Math.round(op * 100) + '%', 330, 110);
-    ctx.fillStyle = '#333'; roundRect(530, 96, 218, 28, 14); ctx.fill();
-    ctx.fillStyle = '#4fa3ff'; roundRect(530, 96, 218 * op, 28, 14); ctx.fill();
+    // Blink control (blinks per minute)
+    const trial = blinkTrialUntil > performance.now();
+    if (trial) {   // after locking: highlight the control and count down
+      const glow = 0.5 + 0.5 * Math.sin(performance.now() / 160);
+      ctx.strokeStyle = `rgba(255, 210, 63, ${0.4 + 0.6 * glow})`; ctx.lineWidth = 5;
+      roundRect(524, 52, 230, 102, 16); ctx.stroke();
+    }
+    ctx.fillStyle = trial ? '#ffd23f' : '#bbb';
+    ctx.font = 'bold 22px system-ui, sans-serif';
+    ctx.fillText('Blink / min', 639, 62);
+    ctx.fillStyle = blinkOn ? '#fff' : '#888';
+    ctx.font = 'bold 36px system-ui, sans-serif';
+    ctx.fillText(blinkRate === 0 ? 'Off' : String(blinkRate), 639, 112);
   }
 
   ctx.textAlign = 'center';
@@ -1127,6 +1144,21 @@ let unlockHold = 0;          // seconds the Unlock button / A has been held (unl
 const UNLOCK_HOLD = 0.8;
 let heightOffset = 0;        // metres along the surface normal (Raise / Lower)
 let flatCollect = null;      // Quick flat: several hits are averaged before placing
+// Blink: the locked image briefly disappears so you can compare your lines with the paper.
+let blinkRate = 20;          // blinks per minute, 0..50 (set only from the panel)
+try { const r = localStorage.getItem('traceAR.blink'); if (r !== null && +r >= 0 && +r <= 50) blinkRate = +r; } catch {}
+let blinkOn = false;         // blinking right now
+let blinkTrialUntil = 0;     // after locking: blinks as a preview, stops at this time unless you set the speed
+let blinkClock = 0;
+// visibility at time t (s) within one blink cycle: a short gap (~0.4 s, never more than a third
+// of the cycle) at the end of each cycle, with quick fades so it isn't harsh
+function blinkVis(t, period) {
+  const off = Math.min(0.4, period / 3), fade = Math.min(0.08, off / 4), start = period - off;
+  if (t < start) return 1;
+  if (t < start + fade) return 1 - (t - start) / fade;
+  if (t > period - fade) return (t - (period - fade)) / fade;
+  return 0;
+}
 let grabMode = true;
 let grab = null;           // { src, pc0: Vector2, c0: Vector2 }
 let buildRequest = false;
@@ -1163,6 +1195,9 @@ function setLocked(v, src) {
   // Locking freezes the image's exact pose: the anchor is no longer followed until you unlock.
   // Unlocking re-anchors at the frozen pose, so nothing jumps.
   if (locked && !v) reanchorRequest = true;
+  // on lock: preview the blink for 5 s and point at the Blink control; it stops unless you change it
+  if (v && !locked) { blinkOn = blinkRate > 0; blinkTrialUntil = performance.now() + 5000; blinkClock = 0; }   // highlight even if set to Off
+  if (!v) { blinkOn = false; blinkTrialUntil = 0; imgUniforms.vis.value = 1; }
   locked = v;
   unlockHold = 0;
   grab = null;
@@ -1517,6 +1552,14 @@ function pressButton(b, src) {
     case 'op+': setOpacity(op + 0.05); break;
     case 'lock': if (!locked) setLocked(true, src); break;
     case 'h+': setHeight(heightOffset + 0.001); break;
+    case 'bl-': case 'bl+': {
+      blinkRate = Math.max(0, Math.min(50, blinkRate + (b.id === 'bl+' ? 1 : -1)));
+      try { localStorage.setItem('traceAR.blink', String(blinkRate)); } catch {}
+      blinkTrialUntil = 0;                       // you chose: keep blinking at this speed
+      blinkOn = locked && blinkRate > 0;         // blinking runs only while locked
+      if (!blinkOn) imgUniforms.vis.value = 1;
+      break;
+    }
     case 'h-': setHeight(heightOffset - 0.001); break;   // unlocking needs a long press (see frame loop)
     case 'reset': resetAdjust(); break;
     case 'rescan': enterScan(!freeMode && !!lastLasso); break;
@@ -1658,7 +1701,17 @@ function pressed(src, idx) {
 }
 const dz = (v) => (Math.abs(v) < 0.15 ? 0 : v);
 
-let aHolding = false;
+let aHolding = false;          // (A no longer unlocks; kept false)
+const keyHold = new Map();      // repeat timing for held opacity buttons
+function opacityKey(src, gp, idx, step, dt) {
+  const k = src.handedness + idx;
+  const down = pressed(src, idx), held = !!gp.buttons[idx]?.pressed;
+  if (down) { setOpacity(imgUniforms.opacity.value + step); pulse(src, 0.2, 25); keyHold.set(k, -0.35); return; }
+  if (!held) { keyHold.delete(k); return; }
+  let t = (keyHold.get(k) ?? 0) + dt;
+  if (t >= 0.1) { setOpacity(imgUniforms.opacity.value + step); t = 0; }
+  keyHold.set(k, t);
+}
 function handleControllers(dt) {
   aHolding = false;
   for (const src of session.inputSources) {
@@ -1667,18 +1720,12 @@ function handleControllers(dt) {
     const sx = dz(gp.axes[2] || 0);
     const sy = dz(gp.axes[3] || 0);
     if (src.handedness === 'right') {
-      const aDown = pressed(src, 4);
-      if (mode !== 'map') continue;
-      if (aDown && !locked) setLocked(true, src);
-      else if (locked && gp.buttons[4]?.pressed) {          // hold A to unlock
-        aHolding = true;
-        unlockHold += dt;
-        if (unlockHold >= UNLOCK_HOLD) setLocked(false, src);
-      }
-      if (!locked) {
-        if (sx) imgUniforms.rot.value -= sx * dt * 0.8;
-        if (sy) { scaleFactor = Math.min(20, Math.max(0.05, scaleFactor * Math.exp(-sy * dt * 0.6))); applySize(); }
-      }
+      if (mode !== 'map') { pressed(src, 4); pressed(src, 5); continue; }
+      // A = opacity down, B = opacity up (tap = one step, hold = keeps going); works while locked
+      opacityKey(src, gp, 4, -0.05, dt);
+      opacityKey(src, gp, 5, +0.05, dt);
+      // right stick: zoom only (up = bigger, down = smaller)
+      if (!locked && sy) { scaleFactor = Math.min(20, Math.max(0.05, scaleFactor * Math.exp(-sy * dt * 0.6))); applySize(); }
     } else if (src.handedness === 'left') {
       const xDown = pressed(src, 4), yDown = pressed(src, 5), stickDown = pressed(src, 3);
       if (stickDown) { setPanelHidden(!panelHidden); pulse(src, 0.3, 30); }
@@ -1943,6 +1990,14 @@ function onFrame(t, frame) {
       if (a.next > 0.35) { a.next = 0.23; pressButton(a.btn, src); }
     }
   }
+
+  // blinking (only while locked): shown ~70% of each cycle, hidden ~30%, with short fades
+  if (blinkOn && blinkTrialUntil && performance.now() > blinkTrialUntil) { blinkOn = false; blinkTrialUntil = 0; }
+  if (blinkOn && locked && blinkRate > 0) {
+    const period = 60 / blinkRate;
+    blinkClock = (blinkClock + dt) % period;
+    imgUniforms.vis.value = blinkVis(blinkClock, period);
+  } else imgUniforms.vis.value = 1;
 
   if (grab && mode === 'map' && !locked) updateGrab();
   handleControllers(dt);
