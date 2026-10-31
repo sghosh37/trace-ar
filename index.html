@@ -68,7 +68,8 @@
       <li><b>Pick the image.</b> Press <b>Image</b> on the panel to open the gallery. It shows pictures from the <code>images</code> folder next to this app on your PC (Downloads\TraceAR\images), plus any picked on this page.</li>
       <li><b>Map the image.</b> The image is projected onto the scanned shape, so it bends over curves. Hold the trigger on the surface to slide it around; use the panel to resize, turn and set opacity.</li>
       <li><b>Hide the panel</b> with <b>Hide</b> (or click the left thumbstick). A small <b>Show panel</b> button floats above your left controller to bring it back. <b>Steady: Low / Medium / High</b> on the scan panel sets how much the pointer is smoothed.</li>
-      <li><b>Lock</b> and trace. Opacity still works while locked.</li>
+      <li>Sway your head a little: if the image slides over the paper, press <b>Raise</b> / <b>Lower</b> (1 mm steps) until it stays put — then it sits exactly on the paper.</li>
+      <li><b>Lock</b> and trace. A locked image is frozen in place (to unlock, hold the button for a moment). Opacity still works while locked.</li>
     </ol>
     <h3>Controller shortcuts (map step)</h3>
     <table>
@@ -77,7 +78,8 @@
       <tr><td>Left stick</td><td>Nudge the image</td></tr>
       <tr><td>Right stick ↕ / ↔</td><td>Size / turn</td></tr>
       <tr><td>X / Y</td><td>Opacity down / up</td></tr>
-      <tr><td>A</td><td>Lock / unlock</td></tr>
+      <tr><td>A</td><td>Lock · hold A to unlock</td></tr>
+      <tr><td>Left grip + left stick ↕</td><td>Raise / lower the image (sit it exactly on the paper)</td></tr>
       <tr><td>Left stick click</td><td>Hide / show the control panel (any step)</td></tr>
     </table>
   </div>
@@ -688,6 +690,7 @@ function setSurface(s) {
   wireMesh.renderOrder = 1;
   wireMesh.frustumCulled = false;
   imgMesh.visible = !!img.texture;
+  imgMesh.position.z = wireMesh.position.z = heightOffset;
   surface.add(wireMesh, imgMesh);
   surface.matrix.fromArray(s.frame);
   surface.updateMatrixWorld(true);
@@ -778,7 +781,10 @@ const BTN_PICK = [];
   a('op-', '−', 150, 70, 110, 80, 'repeat', 'always');
   a('op+', '+', 400, 70, 110, 80, 'repeat', 'always');
   [['mv-l', 'Left'], ['mv-r', 'Right'], ['mv-u', 'Up'], ['mv-d', 'Down']].forEach(([id, l], i) =>
-    a(id, l, 20 + i * 183, 190, 175, 80, 'hold', 'adjust'));
+    a(id, l, 20 + i * 123, 190, 113, 80, 'hold', 'adjust'));
+  // move the image towards / away from you, along the surface normal, 1 mm per press
+  a('h+', 'Raise', 512, 190, 113, 80, 'repeat', 'adjust');
+  a('h-', 'Lower', 635, 190, 113, 80, 'repeat', 'adjust');
   a('sz-', 'Size −', 20, 290, 175, 70, 'hold', 'adjust');
   a('sz+', 'Size +', 203, 290, 175, 70, 'hold', 'adjust');
   a('rt-', 'Turn left', 386, 290, 175, 70, 'hold', 'adjust');
@@ -897,7 +903,7 @@ let panelKey = '';
 function drawPanel() {
   const hovered = new Set([...hoverBtn.values()].filter(Boolean));
   const pressedIds = new Set([...activeBtn.values()].map((a) => a.btn.id));
-  const key = [mode, detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
+  const key = [mode, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
     thumbRev, galleryPage, img.name, gallery.length,
     [...hovered].map((b) => b.id).join(), [...pressedIds].join()].join('|');
   if (key === panelKey) return;
@@ -995,7 +1001,11 @@ function drawPanel() {
     ctx.fillStyle = '#bbb';
     ctx.font = 'bold 28px system-ui, sans-serif';
     ctx.fillText('Opacity', 24, 110);
-    ctx.fillText('Move · Size · Turn  (on the surface)', 24, 172);
+    ctx.fillText('Move · Size · Turn', 24, 172);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = heightOffset ? '#ffd27d' : '#bbb';
+    ctx.fillText('Height ' + (heightOffset >= 0 ? '+' : '') + Math.round(heightOffset * 1000) + ' mm', 748, 172);
+    ctx.textAlign = 'left';
     const op = imgUniforms.opacity.value;
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 40px system-ui, sans-serif';
@@ -1038,7 +1048,12 @@ function drawPanel() {
     ctx.fillStyle = en ? '#fff' : '#555';
     let fs = b.label.length <= 1 ? 52 : 30;
     ctx.font = 'bold ' + fs + 'px system-ui, sans-serif';
-    const label = b.id === 'lock' ? (locked ? 'Unlock' : 'Lock')
+    if (b.id === 'lock' && locked && unlockHold > 0) {   // hold progress
+      ctx.fillStyle = '#c9a227';
+      roundRect(b.x, b.y, b.w * Math.min(1, unlockHold / UNLOCK_HOLD), b.h, 14); ctx.fill();
+      ctx.fillStyle = '#fff';
+    }
+    const label = b.id === 'lock' ? (locked ? 'Hold to unlock' : 'Lock')
                 : b.id === 'grab' ? 'Grab: ' + (grabMode ? 'On' : 'Off')
                 : b.id === 'done' && scanTool === 'lasso' ? 'Done (close)'
                 : b.id === 'steady' ? 'Steady: ' + STEADY[steadyLevel].name
@@ -1108,6 +1123,10 @@ let sampling = null;       // { sources, done, samples, frames, got, total }
 let widthM = 0.21;
 let scaleFactor = 1;
 let locked = false;
+let unlockHold = 0;          // seconds the Unlock button / A has been held (unlock needs a long press)
+const UNLOCK_HOLD = 0.8;
+let heightOffset = 0;        // metres along the surface normal (Raise / Lower)
+let flatCollect = null;      // Quick flat: several hits are averaged before placing
 let grabMode = true;
 let grab = null;           // { src, pc0: Vector2, c0: Vector2 }
 let buildRequest = false;
@@ -1141,13 +1160,22 @@ function clearAnchor() {
   anchor = null;
 }
 function setLocked(v, src) {
+  // Locking freezes the image's exact pose: the anchor is no longer followed until you unlock.
+  // Unlocking re-anchors at the frozen pose, so nothing jumps.
+  if (locked && !v) reanchorRequest = true;
   locked = v;
+  unlockHold = 0;
   grab = null;
   imgUniforms.border.value = locked ? 0 : 1;
   wireMat.visible = !locked && !freeMode;
   if (src) pulse(src, locked ? 0.8 : 0.3, locked ? 80 : 40);
 }
+function setHeight(v) {
+  heightOffset = Math.max(-0.05, Math.min(0.05, Math.round(v * 1000) / 1000));
+  if (imgMesh) { imgMesh.position.z = heightOffset; wireMesh.position.z = heightOffset; }
+}
 function resetAdjust() {
+  setHeight(0);
   scaleFactor = 1;
   imgUniforms.center.value.set(0, 0);
   imgUniforms.rot.value = 0;
@@ -1487,7 +1515,9 @@ function pressButton(b, src) {
   switch (b.id) {
     case 'op-': setOpacity(op - 0.05); break;
     case 'op+': setOpacity(op + 0.05); break;
-    case 'lock': setLocked(!locked, src); break;
+    case 'lock': if (!locked) setLocked(true, src); break;
+    case 'h+': setHeight(heightOffset + 0.001); break;
+    case 'h-': setHeight(heightOffset - 0.001); break;   // unlocking needs a long press (see frame loop)
     case 'reset': resetAdjust(); break;
     case 'rescan': enterScan(!freeMode && !!lastLasso); break;
     case 'lay': toggleLayFlat(); break;
@@ -1628,7 +1658,9 @@ function pressed(src, idx) {
 }
 const dz = (v) => (Math.abs(v) < 0.15 ? 0 : v);
 
+let aHolding = false;
 function handleControllers(dt) {
+  aHolding = false;
   for (const src of session.inputSources) {
     const gp = src.gamepad;
     if (!gp || src.hand) continue;
@@ -1637,7 +1669,12 @@ function handleControllers(dt) {
     if (src.handedness === 'right') {
       const aDown = pressed(src, 4);
       if (mode !== 'map') continue;
-      if (aDown) setLocked(!locked, src);
+      if (aDown && !locked) setLocked(true, src);
+      else if (locked && gp.buttons[4]?.pressed) {          // hold A to unlock
+        aHolding = true;
+        unlockHold += dt;
+        if (unlockHold >= UNLOCK_HOLD) setLocked(false, src);
+      }
       if (!locked) {
         if (sx) imgUniforms.rot.value -= sx * dt * 0.8;
         if (sy) { scaleFactor = Math.min(20, Math.max(0.05, scaleFactor * Math.exp(-sy * dt * 0.6))); applySize(); }
@@ -1649,9 +1686,12 @@ function handleControllers(dt) {
       if (xDown) { setOpacity(imgUniforms.opacity.value - 0.05); pulse(src, 0.2, 30); }
       if (yDown) { setOpacity(imgUniforms.opacity.value + 0.05); pulse(src, 0.2, 30); }
       if (!locked && (sx || sy)) {
-        const c = imgUniforms.center.value;
-        c.x += sx * 0.05 * dt;
-        c.y -= sy * 0.05 * dt;
+        if (gp.buttons[1]?.pressed) setHeight(heightOffset - sy * 0.01 * dt);   // grip held: raise / lower
+        else {
+          const c = imgUniforms.center.value;
+          c.x += sx * 0.05 * dt;
+          c.y -= sy * 0.05 * dt;
+        }
       }
     }
   }
@@ -1848,15 +1888,25 @@ function onFrame(t, frame) {
     }
     const right = [headRight.x, headRight.y, headRight.z];
     const head = [headPos.x, headPos.y, headPos.z];
-    if (flatRequest) {
-      const h = hitSources.get(flatRequest);
+    if (flatRequest) {            // start collecting: keep pointing for a moment
+      flatCollect = { src: flatRequest, ps: [], ns: [], frames: 0 };
       flatRequest = null;
+    }
+    if (flatCollect) {
+      const h = hitSources.get(flatCollect.src);
       const r = h ? frame.getHitTestResults(h) : [];
       const p = r.length ? r[0].getPose(ref) : null;
-      if (p) {
-        const m = p.transform.matrix;
-        const s = flatSurface([m[12], m[13], m[14]], [m[4], m[5], m[6]], right);
-        if (s) enterMap(s, frame, ref);
+      if (p) { const m = p.transform.matrix; flatCollect.ps.push([m[12], m[13], m[14]]); flatCollect.ns.push([m[4], m[5], m[6]]); }
+      if (++flatCollect.frames >= 18) {     // ~0.25 s: median position + average normal (less depth noise)
+        const fc = flatCollect;
+        flatCollect = null;
+        if (fc.ps.length) {
+          const med = (k) => { const v = fc.ps.map((q) => q[k]).sort((a, b) => a - b); return v[v.length >> 1]; };
+          const n = fc.ns.reduce((a, q) => [a[0] + q[0], a[1] + q[1], a[2] + q[2]], [0, 0, 0]);
+          const ln = Math.hypot(...n) || 1;
+          const s = flatSurface([med(0), med(1), med(2)], [n[0] / ln, n[1] / ln, n[2] / ln], right);
+          if (s) enterMap(s, frame, ref);
+        }
       }
     }
     if (buildRequest) {
@@ -1871,10 +1921,19 @@ function onFrame(t, frame) {
 
   if (freePending && viewer) { freePending = false; enterFree(frame, ref); }
   if (reanchorRequest && !grab) { reanchorRequest = false; anchorSurfaceHere(frame, ref); }
-  if (surface.visible && anchor && !(grab && grab.free) && !reanchorRequest) {
+  if (surface.visible && anchor && !locked && !(grab && grab.free) && !reanchorRequest) {
     const ap = frame.getPose(anchor.anchorSpace, ref);
     if (ap) smoothSurfaceTo(ap.transform.matrix);
   }
+
+  // hold-to-unlock on the panel
+  let holdingUnlock = false;
+  for (const [src, a] of activeBtn) if (a.btn.id === 'lock' && locked) {
+    holdingUnlock = true;
+    unlockHold += dt;
+    if (unlockHold >= UNLOCK_HOLD) { setLocked(false, src); activeBtn.delete(src); }
+  }
+  if (!holdingUnlock && !aHolding) unlockHold = 0;
 
   for (const [src, a] of activeBtn) {
     if (!btnEnabled(a.btn)) { activeBtn.delete(src); continue; }

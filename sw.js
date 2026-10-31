@@ -1,5 +1,5 @@
 // Trace AR offline support: app files are cached so it opens without a connection.
-const VERSION = 'trace-ar-v1';
+const VERSION = 'trace-ar-v2';
 const APP = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
 
