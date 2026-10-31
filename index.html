@@ -72,6 +72,7 @@
       <li>Sway your head a little: if the image slides over the paper, press <b>Raise</b> / <b>Lower</b> (1 mm steps) until it stays put — then it sits exactly on the paper.</li>
       <li><b>Gap between your line and the image?</b> Tilt your head: if the gap changes, use <b>Raise / Lower</b>; if it stays the same, nudge with <b>Up / Down / Left / Right</b>. These six buttons keep working while locked, in exact 1 mm steps.</li>
       <li><b>Lock</b> (panel) and trace. A locked image is frozen in place (to unlock, hold the button for a moment). Opacity still works while locked.</li>
+      <li><b>Save spot / Restore spot</b> (panel, while locked): tap two marks you can find again, like two corners of the paper. If the image is off after the headset sleeps, press Restore spot and tap the same two marks in the same order: the image goes back onto the paper.</li>
       <li><b>Blink:</b> after locking, the image blinks for 5 s as a preview. Set <b>Blink / sec</b> on the panel (0 = off, up to 50 per second) to keep it blinking — handy for checking your lines against the paper.<br>
           <span style="color:#ffb347">Caution: fast flashing (roughly 3–30 per second) can trigger seizures in people with photosensitive epilepsy. Above about 36 per second the headset switches to its fastest display mode; very fast blinking looks like a dimmer, shimmering image rather than separate blinks.</span></li>
     </ol>
@@ -457,6 +458,23 @@ function meshFaceOutline(vertices, indices, faceIndex, m, maxAngleDeg = 35) {
   }
   return { pts: h.map((i) => W[i]), n: nW };
 }
+// pure maths for "Restore spot": rigid transform that moves the two saved marks onto the two new taps,
+// turning only about the surface normal n (so the image never tilts), centred on the marks' midpoint.
+function restoreTransform(oA, oB, nA, nB, n) {
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const flat = (d) => { const k = dot(d, n); return [d[0] - n[0] * k, d[1] - n[1] * k, d[2] - n[2] * k]; };
+  const uo = flat(sub(oB, oA)), un = flat(sub(nB, nA));
+  const th = Math.atan2(dot(n, cross(uo, un)), dot(uo, un));
+  const c = Math.cos(th), s = Math.sin(th), t = 1 - c, [x, y, z] = n;
+  // Rodrigues rotation about n (row-major 3x3)
+  const R = [[t * x * x + c, t * x * y - s * z, t * x * z + s * y], [t * x * y + s * z, t * y * y + c, t * y * z - s * x], [t * x * z - s * y, t * y * z + s * x, t * z * z + c]];
+  const co = [(oA[0] + oB[0]) / 2, (oA[1] + oB[1]) / 2, (oA[2] + oB[2]) / 2], cn = [(nA[0] + nB[0]) / 2, (nA[1] + nB[1]) / 2, (nA[2] + nB[2]) / 2];
+  const Rc = [0, 1, 2].map((i) => R[i][0] * co[0] + R[i][1] * co[1] + R[i][2] * co[2]);
+  const tr = [cn[0] - Rc[0], cn[1] - Rc[1], cn[2] - Rc[2]];
+  // column-major 4x4
+  return [R[0][0], R[1][0], R[2][0], 0, R[0][1], R[1][1], R[2][1], 0, R[0][2], R[1][2], R[2][2], 0, tr[0], tr[1], tr[2], 1];
+}
 // SURFACE BUILDER — END
 // =====================================================================
 
@@ -836,6 +854,8 @@ const BTN_PICK = [];
   a('reset', 'Reset', 258, 375, 150, 80, 'tap', 'adjust');
   a('lay', 'Lay flat', 416, 375, 150, 80, 'tap', 'free');
   a('rescan', 'Rescan', 574, 375, 174, 80, 'tap', 'adjust');
+  a('savespot', 'Save spot', 258, 375, 230, 80, 'tap', 'always');
+  a('restore', 'Restore spot', 496, 375, 252, 80, 'tap', 'spot');
   a('grab', 'Grab', 20, 465, 175, 80, 'tap', 'always');
   a('image', 'Image', 203, 465, 175, 80, 'tap', 'adjust');
   a('hide', 'Hide', 386, 465, 175, 80, 'tap', 'always');
@@ -844,12 +864,14 @@ const BTN_PICK = [];
 // per-tool visibility in the scan panel
 const SCAN_ONLY = { room: ['detect'], undo: ['lasso', 'sweep', 'flat'], clear: ['lasso', 'sweep', 'flat'], done: ['lasso', 'sweep', 'flat'] };
 const buttons = () => (mode === 'scan' ? BTN_SCAN.filter((b) => !SCAN_ONLY[b.id] || SCAN_ONLY[b.id].includes(scanTool))
-                     : mode === 'pick' ? BTN_PICK : BTN_MAP);
+                     : mode === 'pick' ? BTN_PICK
+                     : BTN_MAP.filter((b) => locked ? !['reset', 'lay', 'rescan'].includes(b.id) : !['savespot', 'restore'].includes(b.id)));
 
 function btnEnabled(b) {
   if (b.group === 'always') return true;
   if (b.group === 'scanidle') return !sampling;
   if (b.group === 'free') return freeMode && !locked;
+  if (b.group === 'spot') return !!savedSpot || markMode?.kind === 'restore';
   if (b.group === 'fine') return true;          // Up/Down/Left/Right/Raise/Lower: also while locked (1 mm steps)
   if (b.group === 'undo') return !sampling && scanTool === 'lasso' && lassoPts.length > 0;
   if (b.group === 'enough') return !sampling && (scanTool === 'lasso' ? lassoPts.length >= 3 : scanTool === 'sweep' ? scanPts.length >= 40 : false);
@@ -947,7 +969,7 @@ let panelKey = '';
 function drawPanel() {
   const hovered = new Set([...hoverBtn.values()].filter(Boolean));
   const pressedIds = new Set([...activeBtn.values()].map((a) => a.btn.id));
-  const key = [mode, fineNudge.x, fineNudge.y, blinkRate, blinkOn, flashWarnUntil > performance.now(), blinkTrialUntil > performance.now() ? Math.floor(performance.now() / 80) : 0, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
+  const key = [mode, !!savedSpot, markMode ? markMode.kind + markMode.pts.length : '', spotMsgUntil > performance.now() ? spotMsg : '', wakeNote && performance.now() - wakeNote < 15000, fineNudge.x, fineNudge.y, blinkRate, blinkOn, flashWarnUntil > performance.now(), blinkTrialUntil > performance.now() ? Math.floor(performance.now() / 80) : 0, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
     thumbRev, galleryPage, img.name, gallery.length,
     [...hovered].map((b) => b.id).join(), [...pressedIds].join()].join('|');
   if (key === panelKey) return;
@@ -974,6 +996,9 @@ function drawPanel() {
            : freeMode && !locked ? (grab ? 'Carrying · release trigger to drop' : 'Hold trigger to carry the image · then Lock')
            : flashWarnUntil > performance.now() ? 'Caution: fast flashing can trigger seizures'
            : locked && blinkTrialUntil > performance.now() ? `LOCKED · Blink −/+ sets speed (${Math.ceil((blinkTrialUntil - performance.now()) / 1000)}s)`
+           : spotMsgUntil > performance.now() ? spotMsg
+           : markMode ? `${markMode.kind === 'save' ? 'Save spot' : 'Restore spot'}: tap mark ${markMode.pts.length + 1} of 2 on the desk`
+           : locked && wakeNote && performance.now() - wakeNote < 15000 ? (savedSpot ? 'Woke up · image off? Press Restore spot' : 'Woke up · image off? Hold Unlock and re-place')
            : locked ? 'LOCKED · gap? Raise/Lower or nudge 1 mm'
            : grab ? 'Sliding · release trigger to drop'
            : grabMode ? 'Step 2 · Hold trigger on surface to slide image'
@@ -1114,6 +1139,8 @@ function drawPanel() {
                 : b.id === 'grab' ? 'Grab: ' + (grabMode ? 'On' : 'Off')
                 : b.id === 'done' && scanTool === 'lasso' ? 'Done (close)'
                 : b.id === 'steady' ? 'Steady: ' + STEADY[steadyLevel].name
+                : b.id === 'savespot' ? (markMode?.kind === 'save' ? 'Cancel' : savedSpot ? 'Save again' : 'Save spot')
+                : b.id === 'restore' ? (markMode?.kind === 'restore' ? 'Cancel' : 'Restore spot')
                 : b.id === 'rescan' ? (freeMode ? 'Surface…' : lastLasso ? 'Edit shape' : 'Rescan')
                 : b.id === 'lay' ? (layIsFlat() ? 'Stand up' : 'Lay flat')
                 : b.label;
@@ -1255,6 +1282,7 @@ function setLocked(v, src) {
   if (v && !locked) { blinkOn = blinkRate > 0; blinkTrialUntil = performance.now() + 5000; blinkClock = 0; }   // highlight even if set to Off
   if (!v) { blinkOn = false; blinkTrialUntil = 0; imgUniforms.vis.value = 1; }
   locked = v;
+  if (!v) markMode = null;
   unlockHold = 0;
   grab = null;
   imgUniforms.border.value = locked ? 0 : 1;
@@ -1595,6 +1623,8 @@ function onSelectStart(e) {
     else if (scanTool === 'sweep') scanning.add(src);
     else if (scanTool === 'detect') detPickSrc = src;
     else if (!lassoClosed) { lassoDrawSrc = src; lassoTap = true; lassoDrag = -1; }
+  } else if (mode === 'map' && markMode && !markMode.collect) {
+    markMode.collect = { src, ps: [], frames: 0 };     // averaged over a few frames, like Quick flat
   } else if (mode === 'map' && !locked && grabMode && img.texture) {
     startGrab(src);
   }
@@ -1617,6 +1647,8 @@ function pressButton(b, src) {
     case 'op+': setOpacity(op + 0.05); break;
     case 'lock': if (!locked) setLocked(true, src); break;
     case 'h+': setHeight(heightOffset + 0.001); break;
+    case 'savespot': markMode = markMode?.kind === 'save' ? null : { kind: 'save', pts: [], collect: null }; spotMsg = ''; break;
+    case 'restore': markMode = markMode?.kind === 'restore' ? null : { kind: 'restore', pts: [], collect: null }; spotMsg = ''; break;
     case 'mv-l': case 'mv-r': case 'mv-u': case 'mv-d':
       if (locked) {                              // fine-tune while locked: exactly 1 mm per step
         const c = imgUniforms.center.value, st = 0.001;
@@ -1888,6 +1920,24 @@ function updateRays(frame, ref) {
 // then the anchor jumps, and the image must jump with it or it ends up somewhere else.
 let lockBase = null;          // { a: anchor pose at lock, rel: image pose relative to that anchor pose }
 const resync = { pending: false, prev: null, stable: 0 };   // re-align once after a tracking break
+const AUTO_MAX = 0.15, AUTO_MAX_ANGLE = 0.26;   // automatic corrections bigger than 15 cm / 15 deg are treated as glitches
+let wakeNote = 0;              // time of the last wake (for the panel hint)
+let spotMsg = '', spotMsgUntil = 0;
+// Save spot / Restore spot: two marks on the desk you can find again (e.g. paper corners)
+let savedSpot = null;          // { a, b } marks in the image surface's own coordinates
+let markMode = null;           // { kind: 'save' | 'restore', pts: [], collect: null }
+const markDots = [0, 1].map(() => {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffd23f, depthTest: false }));
+  m.renderOrder = 9; m.visible = false; scene.add(m); return m;
+});
+function surfaceAuto(candidate) {       // apply an automatic correction only if it is plausible
+  const p1 = new THREE.Vector3().setFromMatrixPosition(candidate), p0 = new THREE.Vector3().setFromMatrixPosition(surface.matrix);
+  const q1 = new THREE.Quaternion().setFromRotationMatrix(candidate), q0 = new THREE.Quaternion().setFromRotationMatrix(surface.matrix);
+  if (p1.distanceTo(p0) > AUTO_MAX || q1.angleTo(q0) > AUTO_MAX_ANGLE) return false;
+  surface.matrix.copy(candidate);
+  surface.updateMatrixWorld(true);
+  return true;
+}
 function markTrackingBreak() { resync.pending = true; resync.prev = null; resync.stable = 0; }
 const RELOC_DIST = 0.05, RELOC_ANGLE = 0.05;   // 5 cm / ~3 degrees
 function followRelocalisation(frame, ref) {
@@ -1909,20 +1959,71 @@ function followRelocalisation(frame, ref) {
     else resync.stable = 0;
     resync.prev = { p: pA.clone(), q: qA.clone() };
     if (resync.stable >= 20) {                       // ~0.3 s steady
-      surface.matrix.copy(a).multiply(lockBase.rel);
-      surface.updateMatrixWorld(true);
+      surfaceAuto(a.clone().multiply(lockBase.rel)); // ignored if it would move the image implausibly far
       lockBase.a = a;
       resync.pending = false; resync.prev = null; resync.stable = 0;
+      wakeNote = performance.now();
     }
     return;
   }
   // while tracking continuously: small corrections are ignored (no drift), big jumps are followed
   if (pA.distanceTo(pB) > RELOC_DIST || qA.angleTo(qB) > RELOC_ANGLE) {
-    surface.matrix.copy(a).multiply(lockBase.rel);   // put the image back on the same real-world spot
-    surface.updateMatrixWorld(true);
+    if (!surfaceAuto(a.clone().multiply(lockBase.rel))) wakeNote = performance.now();   // glitch: keep still, suggest Restore
     lockBase.a = a;
   }
 }
+// Save spot / Restore spot taps
+function updateMarking(frame, ref) {
+  for (let i = 0; i < 2; i++) markDots[i].visible = !!(markMode && markMode.pts[i]);
+  if (!markMode) return;
+  if (!locked || mode !== 'map') { markMode = null; return; }
+  // pointer dot while marking
+  let aim = null;
+  for (const s of hitSources.keys()) if (!hoverBtn.get(s) && (!aim || s.handedness === 'right')) aim = s;
+  if (aim) {
+    const r = frame.getHitTestResults(hitSources.get(aim));
+    if (r.length) { reticle.matrix.fromArray(r[0].getPose(ref).transform.matrix); reticle.visible = true; }
+  }
+  const c = markMode.collect;
+  if (!c) return;
+  const h = hitSources.get(c.src), r = h ? frame.getHitTestResults(h) : [];
+  if (r.length) { const m = r[0].getPose(ref).transform.matrix; c.ps.push([m[12], m[13], m[14]]); }
+  if (++c.frames < 12) return;
+  markMode.collect = null;
+  if (!c.ps.length) { spotMsg = 'Couldn’t measure there — tap again'; spotMsgUntil = performance.now() + 3000; return; }
+  const med = (k) => { const v = c.ps.map((q) => q[k]).sort((x, y) => x - y); return v[v.length >> 1]; };
+  const p = [med(0), med(1), med(2)];
+  markMode.pts.push(p);
+  markDots[markMode.pts.length - 1].position.fromArray(p);
+  pulse(c.src, 0.4, 30);
+  if (markMode.pts.length < 2) return;
+  const [A, B] = markMode.pts;
+  if (Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]) < 0.05) {
+    spotMsg = 'Pick two marks at least 5 cm apart'; spotMsgUntil = performance.now() + 4000; markMode.pts = []; return;
+  }
+  const inv = surface.matrix.clone().invert();
+  if (markMode.kind === 'save') {
+    savedSpot = { a: new THREE.Vector3(...A).applyMatrix4(inv).toArray(), b: new THREE.Vector3(...B).applyMatrix4(inv).toArray() };
+    spotMsg = 'Spot saved'; spotMsgUntil = performance.now() + 3000;
+  } else {
+    // where the saved marks are now, by the app's (possibly shifted) numbers
+    const oA = new THREE.Vector3(...savedSpot.a).applyMatrix4(surface.matrix).toArray();
+    const oB = new THREE.Vector3(...savedSpot.b).applyMatrix4(surface.matrix).toArray();
+    const dOld = Math.hypot(oA[0] - oB[0], oA[1] - oB[1], oA[2] - oB[2]), dNew = Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]);
+    if (Math.abs(dOld - dNew) > 0.025) {
+      spotMsg = 'Those marks don’t match the saved ones — tap them in the same order'; spotMsgUntil = performance.now() + 5000;
+      markMode.pts = []; return;
+    }
+    const n = new THREE.Vector3(0, 0, 1).transformDirection(surface.matrix).toArray();
+    surface.matrix.premultiply(new THREE.Matrix4().fromArray(restoreTransform(oA, oB, A, B, n)));
+    surface.updateMatrixWorld(true);
+    anchorSurfaceHere(frame, ref);           // new anchor at the restored spot
+    lockBase = null; resync.pending = false; wakeNote = 0;
+    spotMsg = 'Image restored'; spotMsgUntil = performance.now() + 3000;
+  }
+  markMode = null;
+}
+
 // No anchors on this device: use the reference space's own reset notice instead.
 function onRefReset(e) {
   if (anchor || !surface.visible || !e.transform) return;
@@ -2110,6 +2211,7 @@ function onFrame(t, frame) {
     if (ap) smoothSurfaceTo(ap.transform.matrix);
   }
   if (surface.visible && locked) followRelocalisation(frame, ref);
+  updateMarking(frame, ref);
 
   // hold-to-unlock on the panel
   let holdingUnlock = false;
