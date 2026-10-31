@@ -1213,6 +1213,7 @@ function setLocked(v, src) {
   // Locking freezes the image's exact pose: the anchor is no longer followed until you unlock.
   // Unlocking re-anchors at the frozen pose, so nothing jumps.
   if (locked && !v) reanchorRequest = true;
+  lockBase = null;               // (re)measured on the next frame
   // on lock: preview the blink for 5 s and point at the Blink control; it stops unless you change it
   if (v && !locked) fineNudge.x = fineNudge.y = 0;
   if (v && !locked) { blinkOn = blinkRate > 0; blinkTrialUntil = performance.now() + 5000; blinkClock = 0; }   // highlight even if set to Off
@@ -1489,6 +1490,7 @@ async function startSession(kind, auto = false) {
   }
   await renderer.xr.setSession(session);
   session.addEventListener('end', onEnd);
+  try { renderer.xr.getReferenceSpace().addEventListener('reset', onRefReset); } catch {}
   session.addEventListener('inputsourceschange', onInputs);
   session.addEventListener('selectstart', onSelectStart);
   session.addEventListener('selectend', onSelectEnd);
@@ -1828,6 +1830,38 @@ function updateRays(frame, ref) {
   }
 }
 
+// While locked the image ignores the anchor's small corrections (they caused drift). But after
+// sleep or lost tracking the headset re-finds the room and its coordinates can move a lot:
+// then the anchor jumps, and the image must jump with it or it ends up somewhere else.
+let lockBase = null;          // { a: anchor pose at lock, rel: image pose relative to that anchor pose }
+const RELOC_DIST = 0.05, RELOC_ANGLE = 0.05;   // 5 cm / ~3 degrees
+function followRelocalisation(frame, ref) {
+  if (!anchor) return;
+  const ap = frame.getPose(anchor.anchorSpace, ref);
+  if (!ap) return;                                   // anchor not tracked right now: keep still
+  const a = new THREE.Matrix4().fromArray(ap.transform.matrix);
+  if (!lockBase) {                                   // first frame after locking: remember where things are
+    lockBase = { a, rel: a.clone().invert().multiply(surface.matrix) };
+    return;
+  }
+  const pA = new THREE.Vector3(), qA = new THREE.Quaternion(), pB = new THREE.Vector3(), qB = new THREE.Quaternion(), sc = new THREE.Vector3();
+  a.decompose(pA, qA, sc); lockBase.a.decompose(pB, qB, sc);
+  if (pA.distanceTo(pB) > RELOC_DIST || qA.angleTo(qB) > RELOC_ANGLE) {
+    surface.matrix.copy(a).multiply(lockBase.rel);   // put the image back on the same real-world spot
+    surface.updateMatrixWorld(true);
+    lockBase.a = a;
+  }
+}
+// No anchors on this device: use the reference space's own reset notice instead.
+function onRefReset(e) {
+  if (anchor || !surface.visible || !e.transform) return;
+  // e.transform = the new origin expressed in the old coordinates, so old -> new is its inverse
+  const T = new THREE.Matrix4().fromArray(e.transform.matrix).invert();
+  surface.matrix.premultiply(T);
+  surface.updateMatrixWorld(true);
+  lockBase = null;
+}
+
 // follow the anchor, but ignore tiny tracking jitter and ease out bigger corrections
 const _pA = new THREE.Vector3(), _qA = new THREE.Quaternion(), _pS = new THREE.Vector3(), _qS = new THREE.Quaternion(), _sc = new THREE.Vector3();
 const _mA = new THREE.Matrix4();
@@ -2000,6 +2034,7 @@ function onFrame(t, frame) {
     const ap = frame.getPose(anchor.anchorSpace, ref);
     if (ap) smoothSurfaceTo(ap.transform.matrix);
   }
+  if (surface.visible && locked) followRelocalisation(frame, ref);
 
   // hold-to-unlock on the panel
   let holdingUnlock = false;
