@@ -152,7 +152,8 @@ flowchart LR
   M2 --> L
   L -->|hold Unlock 0.8 s| M
   W[Headset wakes] -->|auto line-up ≤ 15 cm| L
-  E[Session ended<br/>long sleep] -->|Resume tracing<br/>persistent anchor| L
+  E[Session ended<br/>long sleep] -->|Resume tracing<br/>persistent anchor found| L
+  E -->|anchor not found in 8 s<br/>image in front, unlocked| M
   F -->|Surface…| S
   M -->|Edit shape| S
 </pre></div>
@@ -164,7 +165,7 @@ flowchart LR
   <h2><span class="n">02</span>Start page &amp; images</h2>
   <ul>
     <li><b>Choose an image:</b> the file picker accepts several images at once. The first one opens straight away in floating mode. If the browser blocks the automatic start, an <b>Open image in headset</b> button appears.</li>
-    <li><b>Resume tracing:</b> shown at the top when a locked tracing was saved (image name and how long ago). One press opens the headset straight into the locked image on its saved spot. <b>Forget this tracing</b> removes it.</li>
+    <li><b>Resume tracing:</b> shown at the top when a locked tracing was saved (image name and how long ago). One press opens the headset straight into the locked image, back on the same place on your paper. <b>Forget this tracing</b> removes it.</li>
     <li><b>Start tracing (select a surface):</b> opens the headset view at the surface-selection step. An image is optional here, because it can be picked inside the headset.</li>
     <li><b>Image library:</b> every picked image is saved inside the app (IndexedDB), up to 60, newest first. The in-headset <b>Image</b> gallery shows them six to a page. When the app is served from the PC, it also lists an <code>images/</code> folder.</li>
     <li><b>Install &amp; offline:</b> a web app manifest and a service worker. App files load network-first, so updates arrive, and fall back to the cache when offline. three.js is cached first, because it never changes.</li>
@@ -287,14 +288,14 @@ stateDiagram-v2
     <li><b>Fine-tune while locked:</b> Raise / Lower and Up / Down / Left / Right still work, in exact <b>1 mm</b> steps (hold repeats). The panel shows the nudge total since locking. Everything else stays frozen.</li>
     <li><b>Panel while locked:</b> the fourth row changes. Reset, Lay flat and Rescan are hidden, leaving only the Lock button (hold to unlock).</li>
   </ul>
-  <h3>Status line while locked (highest priority first)</h3>
+  <h3>Status line in the map step (highest priority first)</h3>
   <div class="tbl"><table>
     <tr><th>Shows</th><th>When</th></tr>
+    <tr><td>Finding where you left off… look at your paper</td><td>Resume, until the persistent anchor is found (max 8 s)</td></tr>
+    <tr><td>Back where you left off</td><td>Resume succeeded (4 s)</td></tr>
+    <tr><td>Couldn’t find where you left off — carry the image back, then Lock</td><td>Resume fallback, image now unlocked (8 s)</td></tr>
     <tr><td>Caution: fast flashing can trigger seizures</td><td>First time Blink goes above 3/s (7 s)</td></tr>
     <tr><td>LOCKED · Blink −/+ sets speed (5s)</td><td>Blink preview just after locking</td></tr>
-    <tr><td>Finding your saved spot… look at your paper</td><td>Resume, until the persistent anchor is found (max 8 s)</td></tr>
-    <tr><td>Back on your saved spot</td><td>Resume succeeded</td></tr>
-    <tr><td>Saved spot not found — carry the image back, then Lock</td><td>Resume fallback (8 s)</td></tr>
     <tr><td>Woke up · image off? Hold Unlock and re-place</td><td>15 s after a wake whose correction was rejected as a glitch</td></tr>
     <tr><td>LOCKED · gap? Raise/Lower or nudge 1 mm</td><td>Otherwise</td></tr>
   </table></div>
@@ -313,7 +314,7 @@ stateDiagram-v2
 </section>
 
 <section id="sleep">
-  <h2><span class="n">12</span>Sleep &amp; wake while locked</h2>
+  <h2><span class="n">12</span>Sleep, wake &amp; Resume</h2>
   <p>When the headset sleeps for a few minutes, it loses track of where it is. On waking it has to find its place in the room again. That often <b>moves the room coordinate system's origin</b>, so the same spot on your paper ends up with different coordinates. A locked image that just kept its old coordinates would end up somewhere else: behind you or under the floor. That was the bug where the panel came back but the image didn't.</p>
   <p>The fix uses the anchor, which the headset keeps tied to the real world through relocation. The app remembers the image's position <i>relative to the anchor</i> at the moment you lock. After any break in tracking it lines the image up with the anchor once, however small the shift. A 1–2 inch vertical shift from the floor being re-estimated was the case the first version missed, because it only reacted to shifts over 5 cm. During continuous tracing, small corrections stay ignored, so the drift fix still holds.</p>
   <div class="diagram"><div class="cap">What happens across sleep and wake</div>
@@ -359,7 +360,7 @@ sequenceDiagram
   <ul>
     <li><b>Persistent anchor:</b> on lock, the app calls <code>anchor.requestPersistentHandle()</code>. The headset keeps that anchor in its room map and returns a handle (a UUID). Only one is kept: the previous handle and any stray ones are deleted (the Quest allows 8 per site).</li>
     <li><b>Saved tracing</b> (IndexedDB store <code>state</code>): the handle, the image (library id), size, zoom, centre, rotation, height, opacity, floating or surface, the surface mesh and the image's pose relative to the anchor. It is re-saved (debounced) whenever any of these change while locked.</li>
-    <li><b>Resume:</b> <code>session.restorePersistentAnchor(uuid)</code>. Once its pose has been steady (under 2 mm) for 20 frames, the image is placed at anchor × saved relative pose, locked, with no blink preview. Panel: <i>“Finding your saved spot…”</i>, then <i>“Back on your saved spot”</i>.</li>
+    <li><b>Resume:</b> <code>session.restorePersistentAnchor(uuid)</code>. Until it is found, the image stays hidden. Once its pose has been steady (under 2 mm) for 20 frames, the image is placed at anchor × saved relative pose, locked, with no blink preview. Panel: <i>“Finding where you left off…”</i>, then <i>“Back where you left off”</i>.</li>
     <li><b>Fallback</b> (no handle, restore fails, or nothing within 8 s): the image appears about 50 cm in front of you with its saved tilt and its size, zoom, height and opacity, unlocked, so you can carry it back onto the paper and lock again.</li>
   </ul>
   <p class="why">Persistent anchors are not kept in private browsing, and the headset needs to recognise the room; a different room or a cleared space setup ends in the fallback.</p>
@@ -392,11 +393,11 @@ sequenceDiagram
     <tr><td>Paper wobbles when your hand moves in</td><td>The Quest rebuilds passthrough from its own depth guess, which bends around your hand</td><td>Platform limit. Even lighting; get the height right</td></tr>
     <tr><td>Small objects not in Detect</td><td>Detect only knows what Space Setup recorded</td><td>Lasso or Sweep</td></tr>
     <tr><td>Image off or gone after waking</td><td>The headset re-estimated the room; an automatic correction over 15 cm is ignored as a likely glitch</td><td>Hold Unlock and re-place</td></tr>
-    <tr><td>Session ended (long sleep)</td><td>The Quest Browser closes the immersive session</td><td>Resume tracing on the start page (persistent anchor; 2-mark fallback)</td></tr>
+    <tr><td>Session ended (long sleep)</td><td>The Quest Browser closes the immersive session</td><td>Resume tracing on the start page; if the anchor isn't found, carry the image back and lock</td></tr>
   </table></div>
 </section>
 
-<footer>Trace AR · index.html, sw.js, manifest.webmanifest, icons/ · This page: docs/design.html · Licensed under the GNU GPL v3 · Written from the code as of 31 Oct 2026 (Resume tracing with persistent anchors; Save spot removed).</footer>
+<footer>Trace AR · index.html, sw.js, manifest.webmanifest, icons/ · This page: docs/design.html · Licensed under the GNU GPL v3 · Written from the code as of 2 Nov 2026 (Resume tracing with persistent anchors; the manual Save spot / Restore spot feature has been removed).</footer>
 </main>
 </div>
 

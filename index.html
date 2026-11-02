@@ -96,7 +96,7 @@
       <li>Sway your head a little: if the image slides over the paper, press <b>Raise</b> / <b>Lower</b> (1 mm steps) until it stays put — then it sits exactly on the paper.</li>
       <li><b>Gap between your line and the image?</b> Tilt your head: if the gap changes, use <b>Raise / Lower</b>; if it stays the same, nudge with <b>Up / Down / Left / Right</b>. These six buttons keep working while locked, in exact 1 mm steps.</li>
       <li><b>Lock</b> (panel) and trace. A locked image is frozen in place (to unlock, hold the button for a moment). Opacity still works while locked.</li>
-      <li><b>Resume:</b> every time you lock, the tracing is saved together with a spot the headset remembers. If the headset ends the session (for example after a long sleep), the start page shows <b>Resume tracing</b>: press it and the image goes back onto the same spot, locked. If the headset can't find the spot, the image appears in front of you, unlocked, to carry back and lock again.</li>
+      <li><b>Resume:</b> every time you lock, the tracing is saved together with an anchor the headset remembers in your room. If the headset ends the session (for example after a long sleep), the start page shows <b>Resume tracing</b>: press it and the image goes back onto the same place on your paper, locked. If the headset can't find it, the image appears in front of you, unlocked, to carry back and lock again.</li>
       <li><b>Blink:</b> after locking, the image blinks for 5 s as a preview. Set <b>Blink / sec</b> on the panel (0 = off, up to 50 per second) to keep it blinking — handy for checking your lines against the paper.<br>
           <span style="color:#ffb347">Caution: fast flashing (roughly 3–30 per second) can trigger seizures in people with photosensitive epilepsy. Above about 36 per second the headset switches to its fastest display mode; very fast blinking looks like a dimmer, shimmering image rather than separate blinks.</span></li>
     </ol>
@@ -177,7 +177,7 @@ function showResumeCard() {
   if (!resumeState || !arSupported) { c.style.display = 'none'; return; }
   const mins = Math.round((Date.now() - resumeState.t) / 60000);
   const ago = mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : mins < 1440 ? Math.round(mins / 60) + ' h ago' : Math.round(mins / 1440) + ' days ago';
-  document.getElementById('resumeInfo').textContent = `${resumeState.imgName || 'Image'} · locked ${ago}. The image goes back onto the same spot on your paper.`;
+  document.getElementById('resumeInfo').textContent = `${resumeState.imgName || 'Image'} · locked ${ago}. The image goes back onto the same place on your paper.`;
   c.style.display = 'block';
 }
 stateLoad().then((st) => { resumeState = st && st.surf ? st : null; showResumeCard(); });
@@ -1033,12 +1033,12 @@ function drawPanel() {
     const pages = Math.max(1, Math.ceil(gallery.length / 6));
     status = 'Choose an image' + (gallery.length ? `  ·  page ${galleryPage + 1}/${pages}` : '');
   } else {
-    status = resumeFind ? 'Finding your saved spot… look at your paper'
+    status = resumeFind ? 'Finding where you left off… look at your paper'
+           : spotMsgUntil > performance.now() ? spotMsg
            : !img.texture ? 'Press Image to choose a picture'
            : freeMode && !locked ? (grab ? 'Carrying · release trigger to drop' : 'Hold trigger to carry the image · then Lock')
            : flashWarnUntil > performance.now() ? 'Caution: fast flashing can trigger seizures'
            : locked && blinkTrialUntil > performance.now() ? `LOCKED · Blink −/+ sets speed (${Math.ceil((blinkTrialUntil - performance.now()) / 1000)}s)`
-           : spotMsgUntil > performance.now() ? spotMsg
            : locked && wakeNote && performance.now() - wakeNote < 15000 ? 'Woke up · image off? Hold Unlock and re-place'
            : locked ? 'LOCKED · gap? Raise/Lower or nudge 1 mm'
            : grab ? 'Sliding · release trigger to drop'
@@ -2076,7 +2076,7 @@ function beginResume(frame, ref) {
   const lib = st.imgId ? localItems.find((it) => it.id === st.imgId) : null;
   const url = lib ? lib.url : st.imgUrl;
   if (url) loadImage(url, st.imgName, (ok) => { if (ok) { imgUniforms.map.value = img.texture; applySize(); if (imgMesh) imgMesh.visible = true; } });
-  // the saved spot
+  // the saved anchor
   resumeFind = { t0: performance.now(), anchor: null, failed: false, stable: 0, prev: null };
   const rf = resumeFind;
   if (st.uuid && session.restorePersistentAnchor) {
@@ -2103,13 +2103,13 @@ function updateResume(frame, ref) {
         lockBase = { a, rel };
         persistAsked = true;                // this anchor is already the saved one
         resumeFind = null;
-        spotMsg = 'Back on your saved spot'; spotMsgUntil = performance.now() + 4000;
+        spotMsg = 'Back where you left off'; spotMsgUntil = performance.now() + 4000;
         return;
       }
     }
   }
   if (rf.failed || performance.now() - rf.t0 > 8000) {
-    // Could not find the saved spot: show the image in front of you with its saved tilt, unlocked,
+    // Could not find the saved anchor: show the image in front of you with its saved tilt, unlocked,
     // so it can be carried back onto the paper and locked again.
     resumeFind = null;
     const rot = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().fromArray(resumeState.surfMatrix));
@@ -2119,7 +2119,7 @@ function updateResume(frame, ref) {
     surface.visible = true;
     if (rf.anchor) try { rf.anchor.delete(); } catch {}
     setLocked(false);
-    spotMsg = 'Saved spot not found — carry the image back, then Lock'; spotMsgUntil = performance.now() + 8000;
+    spotMsg = 'Couldn’t find where you left off — carry the image back, then Lock'; spotMsgUntil = performance.now() + 8000;
   }
 }
 
