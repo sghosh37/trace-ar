@@ -10,7 +10,7 @@ Open on the headset: **https://sghosh37.github.io/trace-ar/** (Meta Quest Browse
 - **Resume tracing**: every lock is saved automatically — the image, its size, position, height and opacity, plus a persistent anchor the headset remembers in your room. If the headset ends the session (e.g. after a long sleep), the start page shows *Resume tracing*: one press puts the image back on the same place on your paper, locked. If the anchor can't be found within 8 s, the image appears in front of you, unlocked, to carry back and lock again. *Forget this tracing* clears it.
 - Picked images are saved inside the app and appear in the in-headset **Image** gallery.
 
-Single-file WebXR app (three.js). Works offline after the first visit.
+Single-file WebXR app (three.js). Works offline after the first visit. The website also has [About](about.html), [How to use it](guide.html), [Software design](docs/design.html) and [Software code](code.html) pages.
 
 ## Design
 

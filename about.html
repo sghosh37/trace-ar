@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  Trace AR - project an image onto a real surface in Meta Quest passthrough and trace it.
+  Copyright (C) 2026 Suman Ghosh (https://github.com/sghosh37)
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About · Trace AR</title>
+<meta name="description" content="What Trace AR is and what it does.">
+<meta name="theme-color" content="#121212">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<nav class="top">
+  <a href="index.html" class="brand">Trace AR</a>
+  <a href="about.html" class="on">About</a>
+  <a href="guide.html">How to use it</a>
+  <a href="docs/design.html">Software design</a>
+  <a href="code.html">Software code</a>
+  <a href="index.html">Open the app</a>
+</nav>
+<main>
+  <header>
+    <h1>About Trace AR</h1>
+    <p class="sub">Project a picture onto paper, a wall or any 3D surface in Meta Quest passthrough, lock it in place, and trace it by hand.</p>
+  </header>
+  <section id="about" class="card">
+        <p>Trace AR is a personal, open-source alternative to tracing apps like TraceArtist, made for the <b>Meta Quest 3 / 3S</b>. It runs in the Quest Browser as a WebXR page and can be installed from the browser so it appears in your App Library.</p>
+    <ul>
+      <li><b>Any surface:</b> select paper on a table, a wall, or a curved object (lasso, sweep, Space Setup objects or one-tap flat). The image is projected onto the real shape, so it bends over curves.</li>
+      <li><b>Steady when locked:</b> a locked image is frozen to the real world; only 1 mm Raise / Lower and nudges still move it.</li>
+      <li><b>Resume:</b> every lock is saved with a room anchor. If the headset ends the session after a long sleep, one press puts the image back on the same place on your paper.</li>
+      <li><b>Private and offline:</b> your images stay inside the app on the headset. Nothing is uploaded. After the first visit it works without internet.</li>
+    </ul>
+  </section>
+  <section class="card">
+    <h2>What you need</h2>
+    <ul>
+      <li>A Meta Quest 3 or 3S (depth sensing is used to hit real surfaces) and the Meta Quest Browser.</li>
+      <li>Space Setup done on the headset, if you want the <b>Detect</b> tool to show your tables and walls.</li>
+      <li>Internet for the first visit only. After that it works offline.</li>
+    </ul>
+    <a class="btn2" href="index.html">Open the app →</a>
+  </section>
+  <div class="cards">
+    <a href="guide.html"><b>How to use it</b><span>Quick start, surface selection, locking, Resume and controller shortcuts.</span></a>
+    <a href="docs/design.html"><b>Software design</b><span>How the app works, feature by feature, with diagrams.</span></a>
+    <a href="code.html"><b>Software code</b><span>Files, how to run it yourself, and the GitHub repository.</span></a>
+  </div>
+</main>
+<footer class="foot">Trace AR is free software under the <a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU GPL v3</a> or later · © 2026 Suman Ghosh · three.js is MIT licensed · <a href="https://github.com/sghosh37/trace-ar">Source</a></footer>
+</body>
+</html>

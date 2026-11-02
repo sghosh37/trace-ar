@@ -103,10 +103,24 @@ pre.mermaid { margin: 0; background: transparent; }
 footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font: 13px/1.6 var(--mono); color: var(--muted); }
 a { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  nav.sitenav { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center; padding:12px 16px; margin:-1px 0 0; background:var(--bg, #121212); border-bottom:1px solid rgba(128,128,128,.3); font-family:system-ui, sans-serif; }
+  nav.sitenav a { color:inherit; opacity:.7; text-decoration:none; font-size:15px; }
+  nav.sitenav a.on, nav.sitenav a:hover { opacity:1; }
+  nav.sitenav a.on { font-weight:600; }
+  nav.sitenav .brand { opacity:1; font-weight:700; margin-right:auto; }
 </style>
 
 </head>
 <body>
+<nav class="sitenav">
+  <a href="../index.html" class="brand">Trace AR</a>
+  <a href="../about.html">About</a>
+  <a href="../guide.html">How to use it</a>
+  <a href="design.html" class="on">Software design</a>
+  <a href="../code.html">Software code</a>
+  <a href="../index.html">Open the app</a>
+</nav>
+
 <div class="wrap">
 <nav class="toc" aria-label="Contents">
   <div class="k">Contents</div>
@@ -122,14 +136,13 @@ a { color: var(--accent); }
     <li><a href="#steady">Stability</a></li>
     <li><a href="#lock">Lock &amp; fine-tune</a></li>
     <li><a href="#blink">Blink</a></li>
-    <li><a href="#sleep">Sleep &amp; wake</a></li>
+    <li><a href="#sleep">Sleep, wake &amp; Resume</a></li>
     <li><a href="#panel">Control panel</a></li>
     <li><a href="#limits">Known limits</a></li>
   </ol>
 </nav>
 
 <main>
-<p style="margin:0 0 18px"><a href="../">← Open Trace AR</a></p>
 <header class="top">
   <div class="eyebrow">Design overview · sghosh37/trace-ar</div>
   <h1>Trace AR</h1>
@@ -168,6 +181,7 @@ flowchart LR
     <li><b>Resume tracing:</b> shown at the top when a locked tracing was saved (image name and how long ago). One press opens the headset straight into the locked image, back on the same place on your paper. <b>Forget this tracing</b> removes it.</li>
     <li><b>Start tracing (select a surface):</b> opens the headset view at the surface-selection step. An image is optional here, because it can be picked inside the headset.</li>
     <li><b>Image library:</b> every picked image is saved inside the app (IndexedDB), up to 60, newest first. The in-headset <b>Image</b> gallery shows them six to a page. When the app is served from the PC, it also lists an <code>images/</code> folder.</li>
+    <li><b>Website pages:</b> <code>index.html</code> is the app's start screen (image picker, Resume card, Start tracing). Separate pages share <code>site.css</code> and a top bar: <b>About</b> (<code>about.html</code>), <b>How to use it</b> (<code>guide.html</code>), <b>Software design</b> (this document) and <b>Software code</b> (<code>code.html</code>: files, how to run it yourself, licence and the GitHub link). The installed app still opens straight on the start screen.</li>
     <li><b>Install &amp; offline:</b> a web app manifest and a service worker. App files load network-first, so updates arrive, and fall back to the cache when offline. three.js is cached first, because it never changes.</li>
   </ul>
 </section>
@@ -397,7 +411,7 @@ sequenceDiagram
   </table></div>
 </section>
 
-<footer>Trace AR · index.html, sw.js, manifest.webmanifest, icons/ · This page: docs/design.html · Licensed under the GNU GPL v3 · Written from the code as of 2 Nov 2026 (Resume tracing with persistent anchors; the manual Save spot / Restore spot feature has been removed).</footer>
+<footer>Trace AR · index.html, about.html, guide.html, code.html, site.css, sw.js, manifest.webmanifest, icons/ · This page: docs/design.html · Licensed under the GNU GPL v3 · Written from the code as of 2 Nov 2026 (Resume tracing with persistent anchors; the manual Save spot / Restore spot feature has been removed).</footer>
 </main>
 </div>
 

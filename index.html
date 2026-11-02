@@ -25,6 +25,7 @@
 <meta name="theme-color" content="#121212">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="site.css">
 <style>
   :root { --bg:#121212; --panel:#1e1e1e; --fg:#eeeeee; --muted:#9a9a9a; --accent:#4fa3ff; }
   * { box-sizing:border-box; }
@@ -46,15 +47,29 @@
   td:first-child { color:var(--accent); white-space:nowrap; padding-right:12px; }
   h3 { margin:14px 0 6px; font-size:16px; }
   ol { margin:8px 0 0; padding-left:20px; line-height:1.5; }
+  a { color:var(--accent); }
+  body { flex-direction:column; align-items:center; }
+  .hero { margin:8px 0 18px; }
+  h2 { margin:0 0 10px; font-size:21px; }
 </style>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
 </script>
 </head>
 <body>
+<nav class="top">
+  <a href="index.html" class="brand">Trace AR</a>
+  <a href="about.html">About</a>
+  <a href="guide.html">How to use it</a>
+  <a href="docs/design.html">Software design</a>
+  <a href="code.html">Software code</a>
+  <a href="index.html" class="on">Open the app</a>
+</nav>
 <main>
-  <h1>Trace AR</h1>
-  <p class="sub">Scan any surface, project an image onto it, and trace.</p>
+  <header class="hero">
+    <h1>Trace AR</h1>
+    <p class="sub">Project a picture onto paper, a wall or any 3D surface in Meta Quest passthrough, lock it in place, and trace it by hand.</p>
+  </header>
 
   <div class="card" id="resumeCard" style="display:none; border:1px solid var(--accent)">
     <strong>Continue where you left off</strong>
@@ -80,40 +95,15 @@
     <p id="status"></p>
   </div>
 
-  <div class="card">
-    <strong>Two ways to start</strong>
-    <p class="sub" style="margin:6px 0 12px"><b>Choose an image</b> above and it opens straight away, floating in front of you — hold the trigger to carry it, <b>Lay flat</b> to put it on a table, then <b>Lock</b>.<br>
-    <b>Start tracing</b> first lets you select a surface (lasso / sweep / quick flat) and maps the image onto it.</p>
-    <strong>Surface selection (Start tracing)</strong>
-    <ol>
-      <li><b>Select the surface (Lasso).</b> Point at the surface and tap the trigger to drop dots — lines join them automatically. Or hold the trigger and drag to draw freehand. Tap near the first (yellow) dot, or press <b>Done</b>, to close the shape. The app then measures the surface inside the shape by itself (keep your hands out of the way for a second).<br>
-          <b>Detect</b> shows the objects your headset already knows from Space Setup (tables, desks, walls…). Point at one and pull the trigger — its outline loads as dots you can drag to fine-tune, then press <b>Done</b>.<br>
-          Other tools: <b>Sweep</b> (hold the trigger and paint over the surface) and <b>Quick flat</b> (tap once on flat paper).</li>
-      <li><b>Pick the image.</b> Press <b>Image</b> on the panel to open the gallery. It shows pictures from the <code>images</code> folder next to this app on your PC (Downloads\TraceAR\images), plus any picked on this page.</li>
-      <li><b>Map the image.</b> The image is projected onto the scanned shape, so it bends over curves. Hold the trigger on the surface to slide it around; use the panel to resize, turn and set opacity.</li>
-      <li><b>Move the panel:</b> point at one of its four corner handles, hold the trigger (or pinch) and drag. It stays where you leave it. Hide and show it again to bring it back in front of you.</li>
-      <li><b>Hide the panel</b> with <b>Hide</b> (or click the left thumbstick). A small <b>Show panel</b> button floats above your left controller to bring it back. <b>Steady: Low / Medium / High</b> on the scan panel sets how much the pointer is smoothed.</li>
-      <li>Sway your head a little: if the image slides over the paper, press <b>Raise</b> / <b>Lower</b> (1 mm steps) until it stays put — then it sits exactly on the paper.</li>
-      <li><b>Gap between your line and the image?</b> Tilt your head: if the gap changes, use <b>Raise / Lower</b>; if it stays the same, nudge with <b>Up / Down / Left / Right</b>. These six buttons keep working while locked, in exact 1 mm steps.</li>
-      <li><b>Lock</b> (panel) and trace. A locked image is frozen in place (to unlock, hold the button for a moment). Opacity still works while locked.</li>
-      <li><b>Resume:</b> every time you lock, the tracing is saved together with an anchor the headset remembers in your room. If the headset ends the session (for example after a long sleep), the start page shows <b>Resume tracing</b>: press it and the image goes back onto the same place on your paper, locked. If the headset can't find it, the image appears in front of you, unlocked, to carry back and lock again.</li>
-      <li><b>Blink:</b> after locking, the image blinks for 5 s as a preview. Set <b>Blink / sec</b> on the panel (0 = off, up to 50 per second) to keep it blinking — handy for checking your lines against the paper.<br>
-          <span style="color:#ffb347">Caution: fast flashing (roughly 3–30 per second) can trigger seizures in people with photosensitive epilepsy. Above about 36 per second the headset switches to its fastest display mode; very fast blinking looks like a dimmer, shimmering image rather than separate blinks.</span></li>
-    </ol>
-    <h3>Controller shortcuts (map step)</h3>
-    <table>
-      <tr><td>Trigger hold</td><td>Slide the image across the surface (Grab On)</td></tr>
-      <tr><td>Grip hold</td><td>Slide the image (even with Grab Off)</td></tr>
-      <tr><td>Left stick</td><td>Nudge the image</td></tr>
-      <tr><td>Right stick ↕</td><td>Zoom (size)</td></tr>
-      <tr><td>A / B</td><td>Opacity down / up (hold to keep changing)</td></tr>
-      <tr><td>X / Y</td><td>Opacity down / up</td></tr>
-      <tr><td>Left grip + left stick ↕</td><td>Raise / lower the image (sit it exactly on the paper)</td></tr>
-      <tr><td>Left stick click</td><td>Hide / show the control panel (any step)</td></tr>
-    </table>
+
+  <p class="sub" style="margin:8px 0 12px">New here? Start with <a href="guide.html">How to use it</a>.</p>
+  <div class="cards">
+    <a href="guide.html"><b>How to use it</b><span>Quick start, surface selection, locking, Resume and controller shortcuts.</span></a>
+    <a href="docs/design.html"><b>Software design</b><span>How the app works, feature by feature, with diagrams.</span></a>
+    <a href="code.html"><b>Software code</b><span>Files, how to run it yourself, and the GitHub repository.</span></a>
   </div>
-  <p class="sub" style="font-size:14px;margin-top:8px">Trace AR is free and open source under the <a href="https://www.gnu.org/licenses/gpl-3.0.html" style="color:var(--accent)">GNU GPL v3</a>. Source code: <a href="https://github.com/sghosh37/trace-ar" style="color:var(--accent)">github.com/sghosh37/trace-ar</a> · <a href="docs/design.html" style="color:var(--accent)">Design</a></p>
 </main>
+<footer class="foot">Trace AR is free software under the <a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU GPL v3</a> or later · © 2026 Suman Ghosh · three.js is MIT licensed · <a href="https://github.com/sghosh37/trace-ar">Source</a></footer>
 
 <script type="module">
 import * as THREE from 'three';
