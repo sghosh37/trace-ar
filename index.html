@@ -733,7 +733,13 @@ const wireMat = new THREE.MeshBasicMaterial({ color: 0x4fa3ff, wireframe: true, 
 let imgMesh = null, wireMesh = null;
 
 let currentSurf = null;      // geometry of the mapped surface (saved for Resume)
+let surfFlat = false;        // the surface is a flat plane (Quick flat, floating, calibrated, or a flat lasso area)
 function setSurface(s) {
+  {   // flat if every vertex lies within 4 mm of the surface plane (local z)
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 2; i < s.positions.length; i += 3) { lo = Math.min(lo, s.positions[i]); hi = Math.max(hi, s.positions[i]); }
+    surfFlat = hi - lo < 0.008;
+  }
   currentSurf = { positions: s.positions, pcs: s.pcs, indices: Array.from(s.indices), frame: Array.from(s.frame) };
   if (imgMesh) { surface.remove(imgMesh); surface.remove(wireMesh); imgMesh.geometry.dispose(); }
   const g = new THREE.BufferGeometry();
@@ -851,14 +857,26 @@ const BTN_SCAN = [], BTN_MAP = [];
   a('clear', 'Clear', 270, 200, 230, 90, 'tap', 'scanidle');
   a('done', 'Done', 520, 200, 228, 90, 'tap', 'enough');
   a('room', 'Room setup', 20, 200, 300, 90, 'tap', 'scanidle');
-  a('t-lasso', 'Lasso', 20, 322, 175, 80, 'tap', 'scanidle');
-  a('t-sweep', 'Sweep', 203, 322, 175, 80, 'tap', 'scanidle');
-  a('t-detect', 'Detect', 386, 322, 175, 80, 'tap', 'scanidle');
-  a('t-flat', 'Quick flat', 569, 322, 179, 80, 'tap', 'scanidle');
+  a('t-lasso', 'Lasso', 20, 322, 141, 80, 'tap', 'scanidle');
+  a('t-sweep', 'Sweep', 169, 322, 141, 80, 'tap', 'scanidle');
+  a('t-detect', 'Detect', 318, 322, 141, 80, 'tap', 'scanidle');
+  a('t-flat', 'Quick flat', 467, 322, 141, 80, 'tap', 'scanidle');
+  a('t-calib', 'Calibrate', 616, 322, 132, 80, 'tap', 'scanidle');
   a('image', 'Image', 20, 465, 175, 80, 'tap', 'always');
   a('steady', 'Steady', 203, 465, 175, 80, 'tap', 'always');
   a('hide', 'Hide', 386, 465, 175, 80, 'tap', 'always');
   a('quit', 'Quit', 569, 465, 179, 80, 'tap', 'always');
+}
+const BTN_CAL = [];
+{
+  const a = mk(BTN_CAL);
+  a('c-h', 'Horizontal', 20, 200, 230, 90, 'tap', 'always');
+  a('c-v', 'Vertical', 258, 200, 230, 90, 'tap', 'always');
+  a('c-undo', 'Undo', 496, 200, 252, 90, 'tap', 'calundo');
+  a('c-off-', 'Grid down', 20, 330, 230, 80, 'repeat', 'always');
+  a('c-off+', 'Grid up', 258, 330, 230, 80, 'repeat', 'always');
+  a('c-ok', 'Confirm', 20, 465, 355, 80, 'tap', 'calok');
+  a('c-cancel', 'Cancel', 386, 465, 362, 80, 'tap', 'always');
 }
 const BTN_PICK = [];
 {
@@ -884,25 +902,32 @@ const BTN_PICK = [];
   a('sz+', 'Size +', 203, 290, 175, 70, 'hold', 'adjust');
   a('rt-', 'Turn left', 386, 290, 175, 70, 'hold', 'adjust');
   a('rt+', 'Turn right', 569, 290, 179, 70, 'hold', 'adjust');
-  a('lock', 'Lock', 20, 375, 230, 80, 'tap', 'always');
-  a('reset', 'Reset', 258, 375, 150, 80, 'tap', 'adjust');
-  a('lay', 'Lay flat', 416, 375, 150, 80, 'tap', 'free');
-  a('rescan', 'Rescan', 574, 375, 174, 80, 'tap', 'adjust');
+  a('lock', 'Lock', 20, 375, 180, 80, 'tap', 'always');
+  a('reset', 'Reset', 208, 375, 130, 80, 'tap', 'adjust');
+  a('lay', 'Lay flat', 346, 375, 130, 80, 'tap', 'free');
+  a('calib', 'Calibrate', 484, 375, 124, 80, 'tap', 'flat');
+  a('rescan', 'Rescan', 616, 375, 132, 80, 'tap', 'adjust');
+  a('calib2', 'Calibrate desk', 258, 375, 230, 80, 'tap', 'flat');   // same, shown while locked
   a('grab', 'Grab', 20, 465, 175, 80, 'tap', 'always');
   a('image', 'Image', 203, 465, 175, 80, 'tap', 'adjust');
   a('hide', 'Hide', 386, 465, 175, 80, 'tap', 'always');
   a('quit', 'Quit', 569, 465, 179, 80, 'tap', 'always');
 }
+const LOCK_BTN = BTN_MAP.find((b) => b.id === 'lock');   // wider while locked ("Hold to unlock")
 // per-tool visibility in the scan panel
 const SCAN_ONLY = { room: ['detect'], undo: ['lasso', 'sweep', 'flat'], clear: ['lasso', 'sweep', 'flat'], done: ['lasso', 'sweep', 'flat'] };
 const buttons = () => (mode === 'scan' ? BTN_SCAN.filter((b) => !SCAN_ONLY[b.id] || SCAN_ONLY[b.id].includes(scanTool))
                      : mode === 'pick' ? BTN_PICK
-                     : BTN_MAP.filter((b) => !locked || !['reset', 'lay', 'rescan'].includes(b.id)));
+                     : mode === 'calib' ? BTN_CAL
+                     : (LOCK_BTN.w = locked ? 230 : 180, BTN_MAP).filter((b) => locked ? !['reset', 'lay', 'rescan', 'calib'].includes(b.id) : b.id !== 'calib2'));
 
 function btnEnabled(b) {
   if (b.group === 'always') return true;
   if (b.group === 'scanidle') return !sampling;
   if (b.group === 'free') return freeMode && !locked;
+  if (b.group === 'flat') return surfFlat && !resumeFind;                 // Calibrate: flat surfaces only, also while locked
+  if (b.group === 'calundo') return !!calib && calib.pts.length > 0;
+  if (b.group === 'calok') return !!calib && !!calib.plane;
   if (b.group === 'fine') return true;          // Up/Down/Left/Right/Raise/Lower: also while locked (1 mm steps)
   if (b.group === 'undo') return !sampling && scanTool === 'lasso' && lassoPts.length > 0;
   if (b.group === 'enough') return !sampling && (scanTool === 'lasso' ? lassoPts.length >= 3 : scanTool === 'sweep' ? scanPts.length >= 40 : false);
@@ -1000,7 +1025,7 @@ let panelKey = '';
 function drawPanel() {
   const hovered = new Set([...hoverBtn.values()].filter(Boolean));
   const pressedIds = new Set([...activeBtn.values()].map((a) => a.btn.id));
-  const key = [mode, !!resumeFind, spotMsgUntil > performance.now() ? spotMsg : '', wakeNote && performance.now() - wakeNote < 15000, fineNudge.x, fineNudge.y, blinkRate, blinkOn, flashWarnUntil > performance.now(), blinkTrialUntil > performance.now() ? Math.floor(performance.now() / 80) : 0, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
+  const key = [mode, calib ? [calib.kind, calib.pts.length, !!calib.plane, calib.msg].join() : '', Math.round(deskOffset * 1000), !!resumeFind, spotMsgUntil > performance.now() ? spotMsg : '', wakeNote && performance.now() - wakeNote < 15000, fineNudge.x, fineNudge.y, blinkRate, blinkOn, flashWarnUntil > performance.now(), blinkTrialUntil > performance.now() ? Math.floor(performance.now() / 80) : 0, Math.round(unlockHold * 20), Math.round(heightOffset * 1000), detObjs.size, detHover ? detHover.entry.label : '', detMsg, detAvailable, lassoEdit, !!lastLasso, freeMode, freeMode && layIsFlat(), steadyLevel, scanPts.length, scanTool, lassoPts.length, lassoClosed, !!sampling, sampling ? sampling.got : 0, snapNow, imgUniforms.opacity.value.toFixed(2), locked, grabMode, !!grab,
     thumbRev, galleryPage, img.name, gallery.length,
     [...hovered].map((b) => b.id).join(), [...pressedIds].join()].join('|');
   if (key === panelKey) return;
@@ -1019,6 +1044,8 @@ function drawPanel() {
            : scanTool === 'lasso' ? 'Step 1 · Draw around the area (lasso)'
            : scanTool === 'sweep' ? 'Step 1 · Sweep over the surface'
            : 'Step 1 · Tap the trigger on the flat surface';
+  } else if (mode === 'calib') {
+    status = 'Calibrate ' + (calib.kind === 'v' ? 'wall · Vertical' : 'desk · Horizontal');
   } else if (mode === 'pick') {
     const pages = Math.max(1, Math.ceil(gallery.length / 6));
     status = 'Choose an image' + (gallery.length ? `  ·  page ${galleryPage + 1}/${pages}` : '');
@@ -1031,8 +1058,8 @@ function drawPanel() {
            : locked && blinkTrialUntil > performance.now() ? `LOCKED · Blink −/+ sets speed (${Math.ceil((blinkTrialUntil - performance.now()) / 1000)}s)`
            : locked && wakeNote && performance.now() - wakeNote < 15000 ? 'Woke up · image off? Hold Unlock and re-place'
            : locked ? 'LOCKED · gap? Raise/Lower or nudge 1 mm'
-           : grab ? 'Sliding · release trigger to drop'
-           : grabMode ? 'Step 2 · Hold trigger on surface to slide image'
+           : grab ? 'Moving · twist your wrist to turn · release to drop'
+           : grabMode ? 'Step 2 · Hold trigger to move, twist to turn'
            : 'Step 2 · Position the image, then Lock';
   }
   ctx.textAlign = 'left';
@@ -1085,6 +1112,41 @@ function drawPanel() {
     ctx.fillStyle = img.texture ? '#9fd4ff' : '#ffb347';
     ctx.fillText(img.texture ? 'Image: ' + img.name.slice(0, 20) : 'No image yet', 500, 505);
     ctx.textAlign = 'left';
+  } else if (mode === 'calib') {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 40px system-ui, sans-serif';
+    const n = calib.pts.length;
+    ctx.fillText(n === 0 ? 'No points yet' : n + (n === 1 ? ' point' : ' points') + (calib.plane ? ' · ready' : ''), 24, 105);
+    ctx.fillStyle = calib.msg ? '#ffb347' : '#9a9a9a';
+    ctx.font = '25px system-ui, sans-serif';
+    const hint = calib.msg ? calib.msg
+      : calib.kind === 'v'
+        ? (n === 0 ? 'Press the controller flat against the wall, buttons facing you, and pull its trigger'
+          : n === 1 ? 'Move it 20 cm or more along the wall and pull the trigger again'
+          : 'Add more points to fit a slanted board, or Confirm')
+        : (n === 0 ? 'Lay the controller flat on the paper, buttons up, and pull its trigger'
+          : n < 3 ? 'Confirm, or add points at other corners (3+ also measures a slope)'
+          : 'Grid on the paper? Confirm. Otherwise nudge it with Grid up / down');
+    {
+      const words = hint.split(' ');
+      let line = '', y = 145;
+      for (const w of words) {
+        if (ctx.measureText(line + w).width > 715 && line) { ctx.fillText(line, 24, y); line = ''; y += 30; }
+        line += w + ' ';
+      }
+      ctx.fillText(line, 24, y);
+    }
+    ctx.fillStyle = '#bbb';
+    ctx.font = 'bold 26px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('Controller offset', 748, 352);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 34px system-ui, sans-serif';
+    ctx.fillText(Math.round(deskOffset * 1000) + ' mm', 748, 392);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#9a9a9a';
+    ctx.font = '22px system-ui, sans-serif';
+    ctx.fillText('Hold the controller the same way each time', 24, 440);
   } else if (mode === 'pick') {
     if (galleryMsg) {
       ctx.fillStyle = '#ffb347';
@@ -1136,6 +1198,8 @@ function drawPanel() {
     if (hov) bg = '#3d4a60';
     if (b.id === 'done' && en) bg = hov ? '#2c8a49' : '#1f6b35';
     if (b.id === 't-' + scanTool) bg = hov ? '#2b6a8f' : '#1f4f6b';
+    if (calib && b.id === 'c-' + calib.kind) bg = hov ? '#2b6a8f' : '#1f4f6b';
+    if (b.id === 'c-ok' && en) bg = hov ? '#2c8a49' : '#1f6b35';
     if (b.id === 'lock') bg = locked ? '#1f6b35' : (hov ? '#5a4a1f' : '#4a3d1a');
     if (b.id === 'grab' && grabMode && !hov) bg = '#1f4f6b';
     if (b.id === 'quit') bg = hov ? '#8a2b2b' : '#5c1f1f';
@@ -1652,6 +1716,7 @@ function onSelectStart(e) {
     pulse(src, 0.25, 25);
     return;
   }
+  if (mode === 'calib') { calibPress(src); return; }
   if (mode === 'scan') {
     if (sampling) return;
     if (scanTool === 'flat') flatRequest = src;
@@ -1707,6 +1772,20 @@ function pressButton(b, src) {
     case 't-sweep': scanTool = 'sweep'; lassoDrawSrc = null; break;
     case 't-flat': scanTool = 'flat'; lassoDrawSrc = null; break;
     case 't-detect': scanTool = 'detect'; lassoDrawSrc = null; detMsg = ''; break;
+    case 't-calib': case 'calib': case 'calib2': startCalib(); break;
+    case 'c-h': case 'c-v': {
+      const k = b.id === 'c-v' ? 'v' : 'h';
+      if (calib.kind !== k) { calib.kind = k; calib.pts = []; calib.plane = null; calib.msg = ''; }
+      break;
+    }
+    case 'c-undo': calib.pts.pop(); calib.msg = ''; fitCalib(); break;
+    case 'c-off-': case 'c-off+':
+      deskOffset = Math.max(0, Math.min(0.08, deskOffset + (b.id === 'c-off-' ? 0.001 : -0.001)));
+      try { localStorage.setItem('traceAR.deskOffset', String(deskOffset)); } catch {}
+      fitCalib();
+      break;
+    case 'c-ok': if (calib && calib.plane) calibApply = true; break;
+    case 'c-cancel': endCalib(); break;
     case 'room':
       if (session && typeof session.initiateRoomCapture === 'function' && !roomCaptureTried) {
         roomCaptureTried = true;
@@ -1764,18 +1843,38 @@ function surfaceHit(src) {
   const local = surface.worldToLocal(hit.point.clone());
   return new THREE.Vector2(local.x, local.y);
 }
+// controller heading in the surface's own plane: its sideways (X) axis, so pointing up or down doesn't
+// change it — only twisting the wrist does. null when the controller is held too steeply to tell.
+function gripPose(src) {
+  const p = lastFrame && lastFrame.getPose(src.gripSpace || src.targetRaySpace, renderer.xr.getReferenceSpace());
+  return p ? new THREE.Matrix4().fromArray(p.transform.matrix) : null;
+}
+function wristHeading(m) {
+  const inv = new THREE.Matrix4().copy(surface.matrixWorld).invert();
+  const x = new THREE.Vector3().setFromMatrixColumn(m, 0).transformDirection(inv);
+  return Math.hypot(x.x, x.y) < 0.35 ? null : Math.atan2(x.y, x.x);
+}
+const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const rot2 = (v, a) => new THREE.Vector2(v.x * Math.cos(a) - v.y * Math.sin(a), v.x * Math.sin(a) + v.y * Math.cos(a));
 function startGrab(src) {
-  if (freeMode) {
-    if (!lastFrame) return;
-    const p = lastFrame.getPose(src.gripSpace || src.targetRaySpace, renderer.xr.getReferenceSpace());
-    if (!p) return;
-    grab = { src, free: true, c0inv: new THREE.Matrix4().fromArray(p.transform.matrix).invert(), s0: surface.matrix.clone() };
+  if (!lastFrame) return;
+  const g = gripPose(src);
+  if (!g) return;
+  surface.updateMatrixWorld(true);
+  if (freeMode) {      // floating image: carried with the hand's full position and tilt
+    grab = { src, free: true, c0inv: g.clone().invert(), s0: surface.matrix.clone() };
     pulse(src, 0.5, 40);
     return;
   }
-  const pc = surfaceHit(src);
-  if (!pc) return;
-  grab = { src, pc0: pc, c0: imgUniforms.center.value.clone() };
+  const h = wristHeading(g);
+  if (surfFlat) {      // flat surface: the image follows the hand across the plane, turning with the wrist
+    const local = surface.worldToLocal(new THREE.Vector3().setFromMatrixPosition(g));
+    grab = { src, hand: true, p0: new THREE.Vector2(local.x, local.y), c0: imgUniforms.center.value.clone(), r0: imgUniforms.rot.value, h: h, turn: 0 };
+  } else {             // curved surface: slide where the ray hits, turning with the wrist
+    const pc = surfaceHit(src);
+    if (!pc) return;
+    grab = { src, pc0: pc, c0: imgUniforms.center.value.clone(), r0: imgUniforms.rot.value, h: h, turn: 0 };
+  }
   pulse(src, 0.5, 40);
 }
 function endGrab(src) {
@@ -1798,10 +1897,227 @@ function updateGrab() {
     surface.updateMatrixWorld(true);
     return;
   }
-  const pc = surfaceHit(grab.src);
-  if (!pc) return;
-  const target = grab.c0.clone().add(pc.sub(grab.pc0));
-  imgUniforms.center.value.lerp(target, STEADY[steadyLevel].grab);
+  const g = gripPose(grab.src);
+  if (!g) return;
+  // wrist twist: accumulate small heading changes (so it never jumps at ±180°)
+  const h = wristHeading(g);
+  if (h !== null) {
+    if (grab.h !== null) grab.turn += wrapAngle(h - grab.h);
+    grab.h = h;
+  }
+  let pivot0, pivot;
+  if (grab.hand) {
+    const local = surface.worldToLocal(new THREE.Vector3().setFromMatrixPosition(g));
+    pivot0 = grab.p0; pivot = new THREE.Vector2(local.x, local.y);
+  } else {
+    const pc = surfaceHit(grab.src);
+    if (!pc) return;
+    pivot0 = grab.pc0; pivot = pc;
+  }
+  // the image turns about the hand (or the point under the ray), like a sheet held at that spot
+  const target = pivot.clone().add(rot2(grab.c0.clone().sub(pivot0), grab.turn));
+  const k = STEADY[steadyLevel].grab;
+  imgUniforms.center.value.lerp(target, k);
+  imgUniforms.rot.value += (grab.r0 + grab.turn - imgUniforms.rot.value) * k;
+}
+
+// ---------- desk calibration (the controller is the measuring tool) ----------
+// The controller's tracked position is much more precise than depth hit-test. Resting it on the paper
+// (or pressing it against a wall) and pulling its trigger records where the surface is.
+let calib = null;            // { kind: 'h' | 'v', pts: [Vector3 grip positions], plane: { c, n } | null, from: 'scan' | 'map', msg }
+let calibApply = false;      // Confirm pressed: applied in the next frame (anchors need a frame)
+let calibPending = [];       // trigger presses waiting for their pose history
+let deskOffset = 0.025;      // grip centre -> surface, along the surface normal (metres); fine-tuned with Grid up / down
+try { const v = parseFloat(localStorage.getItem('traceAR.deskOffset')); if (v >= 0 && v <= 0.08) deskOffset = v; } catch {}
+const poseHist = new Map();  // inputSource -> [{ t, p: Vector3 }] grip positions of the last ~0.6 s
+const calGrid = (() => {
+  const v = [], H = 0.5, S = 0.05;
+  for (let a = -H; a <= H + 1e-6; a += S) { v.push(a, -H, 0, a, H, 0, -H, a, 0, H, a, 0); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(v), 3));
+  const m = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x5ce1e6, transparent: true, opacity: 0.55, depthTest: false }));
+  m.matrixAutoUpdate = false; m.renderOrder = 8; m.visible = false; m.frustumCulled = false;
+  scene.add(m);
+  return m;
+})();
+const calDots = [];
+function startCalib() {
+  calib = { kind: calib ? calib.kind : 'h', pts: [], plane: null, from: mode === 'scan' ? 'scan' : 'map', msg: '' };
+  if (calib.from === 'scan') { lassoDrawSrc = null; cancelSampling(); }
+  grab = null;
+  mode = 'calib';
+  hoverBtn.clear(); activeBtn.clear();
+}
+function endCalib() {
+  if (!calib) return;
+  mode = calib.from;
+  calib = null; calibPending = [];
+  calGrid.visible = false;
+  for (const d of calDots) d.visible = false;
+  hoverBtn.clear(); activeBtn.clear();
+}
+function calibPress(src) {
+  if (src.hand || !src.gripSpace) { calib.msg = 'Use a controller to calibrate (hand tracking can’t measure precisely)'; return; }
+  calibPending.push({ src, t: performance.now() });
+}
+// pose from just before the press: pulling the trigger nudges the controller
+function poseBeforePress(src, t) {
+  const h = poseHist.get(src) || [];
+  const w = h.filter((e) => e.t >= t - 330 && e.t <= t - 100);
+  if (!w.length) return null;
+  const p = new THREE.Vector3();
+  for (const e of w) p.add(e.p);
+  return p.multiplyScalar(1 / w.length);
+}
+// least-squares plane through the points: normal = smallest eigenvector of their covariance (Jacobi)
+function fitPlaneNormal(pts) {
+  const c = new THREE.Vector3();
+  pts.forEach((p) => c.add(p)); c.multiplyScalar(1 / pts.length);
+  const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const p of pts) { const d = [p.x - c.x, p.y - c.y, p.z - c.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) A[i][j] += d[i] * d[j]; }
+  const V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sweep = 0; sweep < 12; sweep++) for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+    if (Math.abs(A[p][q]) < 1e-12) continue;
+    const th = 0.5 * Math.atan2(2 * A[p][q], A[q][q] - A[p][p]), cs = Math.cos(th), sn = Math.sin(th);
+    for (let k = 0; k < 3; k++) { const a = A[k][p], b = A[k][q]; A[k][p] = cs * a - sn * b; A[k][q] = sn * a + cs * b; }
+    for (let k = 0; k < 3; k++) { const a = A[p][k], b = A[q][k]; A[p][k] = cs * a - sn * b; A[q][k] = sn * a + cs * b; }
+    for (let k = 0; k < 3; k++) { const a = V[k][p], b = V[k][q]; V[k][p] = cs * a - sn * b; V[k][q] = sn * a + cs * b; }
+  }
+  const ev = [A[0][0], A[1][1], A[2][2]];
+  const order = [0, 1, 2].sort((a, b) => ev[a] - ev[b]);
+  const k = order[0];
+  // the points must spread in two directions (not all on one line) for the fit to be trusted
+  const spread2 = Math.sqrt(Math.max(0, ev[order[1]]) / pts.length);
+  return { c, n: new THREE.Vector3(V[0][k], V[1][k], V[2][k]).normalize(), spread2 };
+}
+function fitCalib() {
+  if (!calib) return;
+  const P = calib.pts;
+  calib.plane = null;
+  if (!P.length) return;
+  const c = new THREE.Vector3();
+  P.forEach((p) => c.add(p)); c.multiplyScalar(1 / P.length);
+  let n = null;
+  if (P.length >= 3) {
+    const f = fitPlaneNormal(P);
+    if (f.spread2 > 0.03) {                               // points at least a few cm apart sideways
+      n = f.n;
+      if (calib.kind === 'h') {
+        if (n.y < 0) n.negate();
+        if (n.y < Math.cos(30 * Math.PI / 180)) { n = null; calib.msg = 'Those points don’t make a flat desk — Undo the odd one, or check the controller'; }
+      } else {
+        if (n.dot(headPos.clone().sub(c)) < 0) n.negate();
+        if (Math.abs(n.y) > Math.sin(45 * Math.PI / 180)) { n = null; calib.msg = 'Those points don’t make a wall — Undo the odd one'; }
+      }
+    }
+  }
+  if (!n) {
+    if (calib.kind === 'h') n = new THREE.Vector3(0, 1, 0);           // level desk
+    else {
+      if (P.length < 2) return;                                     // a wall needs two points
+      const d = P[P.length - 1].clone().sub(P[0]); d.y = 0;
+      if (d.length() < 0.15) { calib.msg = 'Move at least 15 cm along the wall between the two points'; return; }
+      n = new THREE.Vector3(0, 1, 0).cross(d).normalize();
+      if (n.dot(headPos.clone().sub(c)) < 0) n.negate();
+    }
+  }
+  if (P.length >= 3 && calib.msg && n) calib.msg = calib.msg;   // keep any warning
+  calib.plane = { c: c.addScaledVector(n, -deskOffset), n };    // grip centre -> surface
+}
+function updateCalib(frame, ref) {
+  // pose history of every controller (for the press-before-trigger pose)
+  const now = performance.now();
+  for (const src of session.inputSources) {
+    if (src.hand || !src.gripSpace) continue;
+    const p = frame.getPose(src.gripSpace, ref);
+    if (!p) continue;
+    let h = poseHist.get(src);
+    if (!h) poseHist.set(src, h = []);
+    const m = p.transform.matrix;
+    h.push({ t: now, p: new THREE.Vector3(m[12], m[13], m[14]) });
+    while (h.length && h[0].t < now - 600) h.shift();
+  }
+  if (!calib) return;
+  // trigger presses: take the pose from just before the press
+  calibPending = calibPending.filter((q) => {
+    if (now - q.t < 40) return true;                 // let the history catch up
+    const p = poseBeforePress(q.src, q.t);
+    if (!p) { calib.msg = 'Couldn’t read the controller — hold it still and try again'; return false; }
+    if (calib.kind === 'v' && calib.pts.length && p.distanceTo(calib.pts[calib.pts.length - 1]) < 0.02) {
+      calib.msg = 'Move along the wall before the next point'; return false;
+    }
+    calib.pts.push(p);
+    calib.msg = '';
+    fitCalib();
+    pulse(q.src, 0.6, 60);
+    return false;
+  });
+  // the grid: the fitted plane, or (before any point) a live preview under the controller
+  let c, n;
+  if (calib.plane) { c = calib.plane.c; n = calib.plane.n; }
+  else {
+    let live = null;
+    for (const src of session.inputSources) if (!src.hand && src.gripSpace && (!live || src.handedness === 'right')) live = src;
+    const h = live && poseHist.get(live);
+    if (h && h.length) {
+      const p = h[h.length - 1].p;
+      if (calib.kind === 'h') { n = new THREE.Vector3(0, 1, 0); c = p.clone().addScaledVector(n, -deskOffset); }
+      else { n = headPos.clone().sub(p); n.y = 0; if (n.lengthSq() < 1e-6) n.set(0, 0, 1); n.normalize(); c = p.clone().addScaledVector(n, -deskOffset); }
+    }
+  }
+  if (c) {
+    let x = headRight.clone().addScaledVector(n, -headRight.dot(n));
+    if (x.lengthSq() < 1e-6) x.set(1, 0, 0);
+    x.normalize();
+    const y = new THREE.Vector3().crossVectors(n, x);
+    calGrid.matrix.makeBasis(x, y, n).setPosition(c);
+    calGrid.material.opacity = calib.plane ? 0.7 : 0.3;
+    calGrid.visible = true;
+  } else calGrid.visible = false;
+  for (let i = 0; i < Math.max(calDots.length, calib.pts.length); i++) {
+    if (!calDots[i]) {
+      const d = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffd23f, depthTest: false }));
+      d.renderOrder = 9; scene.add(d); calDots.push(d);
+    }
+    const P = calib.pts[i];
+    calDots[i].visible = !!P;
+    if (P) calDots[i].position.copy(calib.plane ? P.clone().addScaledVector(calib.plane.n, -deskOffset) : P);
+  }
+}
+// Confirm: put the image on the measured plane
+function applyCalib(frame, ref) {
+  const { c, n } = calib.plane, from = calib.from;
+  endCalib();
+  if (from === 'scan') {                     // Start tracing: the calibrated plane becomes the surface
+    const s = flatSurface([c.x, c.y, c.z], [n.x, n.y, n.z], [headRight.x, headRight.y, headRight.z]);
+    if (s) { enterMap(s, frame, ref); spotMsg = 'Desk calibrated'; spotMsgUntil = performance.now() + 3000; }
+    return;
+  }
+  // in the map step: move the current (flat) surface onto the plane, keeping where the image is on it
+  const p0 = new THREE.Vector3(), q0 = new THREE.Quaternion(), sc = new THREE.Vector3();
+  surface.matrix.decompose(p0, q0, sc);
+  const imgW = surface.localToWorld(new THREE.Vector3(imgUniforms.center.value.x, imgUniforms.center.value.y, 0));
+  const xOld = new THREE.Vector3(1, 0, 0).applyQuaternion(q0);
+  let x = xOld.clone().addScaledVector(n, -xOld.dot(n));
+  if (x.lengthSq() < 1e-4) { x = headRight.clone().addScaledVector(n, -headRight.dot(n)); }
+  x.normalize();
+  const y = new THREE.Vector3().crossVectors(n, x);
+  // the image centre drops straight onto the plane; the surface is re-centred under it
+  const onPlane = imgW.clone().addScaledVector(n, -imgW.clone().sub(c).dot(n));
+  const pos = onPlane.clone().addScaledVector(x, -imgUniforms.center.value.x).addScaledVector(y, -imgUniforms.center.value.y);
+  if (currentSurf) {                         // flatten what's left of any tiny bumps
+    for (let i = 2; i < currentSurf.positions.length; i += 3) currentSurf.positions[i] = 0;
+    if (imgMesh) { imgMesh.geometry.attributes.position.needsUpdate = true; imgMesh.geometry.computeBoundingSphere(); }
+  }
+  surface.matrix.makeBasis(x, y, n).setPosition(pos);
+  surface.updateMatrixWorld(true);
+  surfFlat = true;
+  if (freeMode) freeMode = false;            // now lying on the desk: moves across it, turns with the wrist
+  setHeight(0);                              // the calibration sets the height
+  anchorSurfaceHere(frame, ref);
+  lockBase = null; resync.pending = false; wakeNote = 0;
+  saveSig = '';
+  spotMsg = 'Desk calibrated'; spotMsgUntil = performance.now() + 3000;
 }
 
 function onEnd() {
@@ -1814,6 +2130,7 @@ function onEnd() {
   rays.clear();
   prevButtons.clear(); hoverBtn.clear(); activeBtn.clear(); selecting.clear(); scanning.clear();
   grab = null; buildRequest = false; flatRequest = null; lassoDrawSrc = null;
+  calib = null; calibPending = []; calibApply = false; calGrid.visible = false; calDots.forEach((d) => (d.visible = false)); poseHist.clear();
   cancelSampling();
   lassoLine.visible = lassoDots.visible = startMarker.visible = false;
   for (const e of detObjs.values()) { detGroup.remove(e.mesh); e.mesh.geometry.dispose(); }
@@ -2293,6 +2610,8 @@ function onFrame(t, frame) {
     }
   }
 
+  updateCalib(frame, ref);
+  if (calibApply) { calibApply = false; if (calib && calib.plane) applyCalib(frame, ref); }
   if (freePending && viewer) { freePending = false; enterFree(frame, ref); }
   if (resumePending && viewer) { resumePending = false; beginResume(frame, ref); }
   updateResume(frame, ref);

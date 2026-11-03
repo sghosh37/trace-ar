@@ -157,7 +157,7 @@ a { color: var(--accent); }
 <pre class="mermaid">
 flowchart LR
   A[Start page] -->|Choose an image| F[Floating image<br/>in front of you]
-  A -->|Start tracing| S[Select surface<br/>Lasso · Sweep · Detect · Quick flat]
+  A -->|Start tracing| S[Select surface<br/>Lasso · Sweep · Detect · Quick flat · Calibrate]
   S --> B[Build surface mesh<br/>+ anchor it]
   B --> M[Map image<br/>projected onto surface]
   F --> M2[Position image<br/>carry · Lay flat]
@@ -201,13 +201,29 @@ flowchart LR
 
 <section id="select">
   <h2><span class="n">04</span>Surface selection</h2>
-  <p>Step 1 has four tools, chosen on the panel. Each one produces a set of points on the real surface, plus, for Lasso and Detect, an outline.</p>
+  <p>Step 1 has five tools, chosen on the panel. The first four produce a set of points on the real surface (plus, for Lasso and Detect, an outline). <b>Calibrate</b> measures a flat desk or wall with the controller itself; see below.</p>
   <div class="grid2">
     <div class="box"><h4>Lasso <span class="tag a">default</span></h4><p>Tap to drop dots, joined by lines. Hold and drag to draw freehand. Tap near the yellow first dot (within 3 cm) or press Done to close. You can drag any dot within 2.2 cm, and tapping an edge inserts a dot there. Undo removes the last dot.</p></div>
     <div class="box"><h4>Sweep</h4><p>Hold the trigger and paint over the surface. Hits are kept one per 4 mm cell, up to 20,000. Done needs at least 40.</p></div>
     <div class="box"><h4>Detect</h4><p>Shows planes and meshes from Space Setup with their labels (Table, Wall…). The picked object's outline loads as editable lasso dots: a plane's polygon, or the convex outline of the mesh faces facing the same way (within 35°).</p></div>
     <div class="box"><h4>Quick flat</h4><p>One tap on flat paper. About 18 hits over a quarter second are combined: median position and average normal. That gives a flat 1.2 m patch.</p></div>
   </div>
+  <h3>Calibrate desk: the controller as a measuring tool</h3>
+  <p>Depth hit-test is only good to about a centimetre, which is where the height gap between the image and the paper came from. The controller's own tracked position is far more precise, so Calibrate uses the controller resting on the surface instead. It opens from the <b>Calibrate</b> tool in Step 1, or the <b>Calibrate</b> / <b>Calibrate desk</b> button in the map step (flat surfaces only, also while locked).</p>
+  <div class="tbl"><table>
+    <tr><th>Mode</th><th>What you do</th><th>What the app works out</th></tr>
+    <tr><td>Horizontal</td><td>Lay the controller flat on the paper, buttons up, and pull its trigger. Optionally add points at other corners.</td><td>1–2 points: a level desk at that height. 3 or more spread-out points: a best-fit plane, so a sloped drawing board is measured too (rejected if more than 30° from level).</td></tr>
+    <tr><td>Vertical</td><td>Press the controller flat against the wall, buttons facing you, pull the trigger; move 15 cm or more along the wall and pull again.</td><td>2 points: an upright wall through them, facing you. 3 or more spread-out points: a best-fit plane, so a leaning easel works too.</td></tr>
+  </table></div>
+  <ul>
+    <li><b>Which pose is used:</b> the average controller position from 100–330 ms <i>before</i> the trigger press, because pulling the trigger nudges the controller. Each point gives a buzz.</li>
+    <li><b>Plane fit:</b> least squares through the controller positions (smallest eigenvector of their covariance). The points must spread at least a few centimetres in two directions; otherwise the level / upright rule is used.</li>
+    <li><b>Controller offset:</b> the tracked point is inside the controller, so the surface is that far below it, along the plane's normal. The default is 25 mm. <b>Grid up / Grid down</b> change it in 1 mm steps; it is remembered on the headset, so it only needs setting once.</li>
+    <li><b>Grid:</b> a 1 m grid with 5 cm squares shows the plane. Before the first point it follows the controller; afterwards it shows the measured plane. Yellow dots mark the points. <b>Undo</b> removes the last one, <b>Cancel</b> leaves everything as it was.</li>
+    <li><b>Confirm in Step 1:</b> the measured plane becomes the surface (a flat 1.2 m patch) and the image is mapped onto it.</li>
+    <li><b>Confirm in the map step:</b> the current surface is moved onto the measured plane. The image keeps its place on the surface and drops straight onto the plane, Raise / Lower is reset to 0, a floating image becomes a desk image, and the surface is re-anchored (and, if locked, re-locked at the new pose and saved for Resume).</li>
+    <li>A and B are not used here; they still change opacity in the map step. Hand tracking can't calibrate, so Quick flat / Lasso remain for that.</li>
+  </ul>
   <h3>Measuring inside a lasso automatically</h3>
   <p>After a lasso closes, the app shoots a grid of fixed depth rays from your head into the outline: the densest of 16×16, 13×13, 11×11 or 9×9 that stays under about 140 rays. Hits more than 30 cm off the outline's plane (hands, background) are dropped. It stops after 60 frames or when all rays have answered.</p>
 </section>
@@ -237,6 +253,13 @@ flowchart LR
     <tr><td><code>border</code></td><td>Blue outline, hidden when locked.</td></tr>
   </table></div>
   <p><b>Raise / Lower</b> moves the whole mesh along the surface normal, in 1 mm steps, up to ±50 mm.</p>
+  <h3>Moving and turning with the wrist (unlocked)</h3>
+  <p>Hold the trigger (Grab on) or the grip and the image moves with your hand; <b>twisting the wrist turns it</b>, about the spot under your hand, like a sheet held at that point. The twist is the controller's sideways axis measured in the surface's plane, so tilting or lifting the wrist has no effect, and small steps are added up so it never jumps at ±180°. The Steady setting smooths both move and turn.</p>
+  <ul>
+    <li><b>Flat surface</b> (Quick flat, calibrated, or a lasso area flat within 8 mm): the image follows the hand's position across the plane, one to one, and stays on the plane.</li>
+    <li><b>Curved surface:</b> the image slides to where the ray hits the surface, and turns with the wrist.</li>
+    <li><b>Floating image:</b> carried with the hand's full position and tilt (section 07).</li>
+  </ul>
 </section>
 
 <section id="free">
@@ -253,8 +276,8 @@ flowchart LR
   <h2><span class="n">08</span>Controls</h2>
   <div class="tbl"><table>
     <tr><th>Input</th><th>Action</th><th>When locked</th></tr>
-    <tr><td>Trigger / pinch</td><td>Press panel buttons; place dots; hold on the image to slide it</td><td>Panel only</td></tr>
-    <tr><td>Grip (hold)</td><td>Slide or carry the image</td><td>Blocked</td></tr>
+    <tr><td>Trigger / pinch</td><td>Press panel buttons; place dots; hold to move the image (twist the wrist to turn it); in Calibrate, record a point</td><td>Panel only</td></tr>
+    <tr><td>Grip (hold)</td><td>Move or carry the image (twist the wrist to turn it)</td><td>Blocked</td></tr>
     <tr><td>Right stick ↕</td><td>Zoom</td><td>Blocked</td></tr>
     <tr><td>Left stick</td><td>Move across the surface</td><td>Blocked</td></tr>
     <tr><td>Left grip + left stick ↕</td><td>Raise / lower</td><td>Blocked</td></tr>
@@ -300,7 +323,7 @@ stateDiagram-v2
     <li><b>Freezes the pose.</b> The image's position no longer follows the anchor's small corrections, which are what caused the drift while tracing.</li>
     <li><b>Hold to unlock (0.8 s)</b>, with a yellow progress bar, so a bump or a pencil-grip pinch can't release it. Unlocking recreates the anchor at the frozen pose, so nothing jumps.</li>
     <li><b>Fine-tune while locked:</b> Raise / Lower and Up / Down / Left / Right still work, in exact <b>1 mm</b> steps (hold repeats). The panel shows the nudge total since locking. Everything else stays frozen.</li>
-    <li><b>Panel while locked:</b> the fourth row changes. Reset, Lay flat and Rescan are hidden, leaving only the Lock button (hold to unlock).</li>
+    <li><b>Panel while locked:</b> the fourth row changes. Reset, Lay flat, Calibrate and Rescan are hidden, leaving the Lock button (hold to unlock) and <b>Calibrate desk</b>, so the height can be corrected without unlocking.</li>
   </ul>
   <h3>Status line in the map step (highest priority first)</h3>
   <div class="tbl"><table>
@@ -308,6 +331,7 @@ stateDiagram-v2
     <tr><td>Finding where you left off… look at your paper</td><td>Resume, until the persistent anchor is found (max 8 s)</td></tr>
     <tr><td>Back where you left off</td><td>Resume succeeded (4 s)</td></tr>
     <tr><td>Couldn’t find where you left off — carry the image back, then Lock</td><td>Resume fallback, image now unlocked (8 s)</td></tr>
+    <tr><td>Desk calibrated</td><td>After Confirm in Calibrate (3 s)</td></tr>
     <tr><td>Caution: fast flashing can trigger seizures</td><td>First time Blink goes above 3/s (7 s)</td></tr>
     <tr><td>LOCKED · Blink −/+ sets speed (5s)</td><td>Blink preview just after locking</td></tr>
     <tr><td>Woke up · image off? Hold Unlock and re-place</td><td>15 s after a wake whose correction was rejected as a glitch</td></tr>
@@ -394,8 +418,16 @@ sequenceDiagram
     <tr><td class="num">1</td><td colspan="2">Opacity − / % / + · Blink / sec − value +</td></tr>
     <tr><td class="num">2</td><td>Left · Right · Up · Down (glide) · Raise · Lower</td><td>Same six buttons in 1 mm steps</td></tr>
     <tr><td class="num">3</td><td>Size − · Size + · Turn left · Turn right</td><td>Shown but disabled</td></tr>
-    <tr><td class="num">4</td><td>Lock · Reset · Lay flat (floating only) · Rescan / Edit shape / Surface…</td><td>Hold to unlock</td></tr>
+    <tr><td class="num">4</td><td>Lock · Reset · Lay flat (floating only) · Calibrate (flat surfaces) · Rescan / Edit shape / Surface…</td><td>Hold to unlock · Calibrate desk</td></tr>
     <tr><td class="num">5</td><td colspan="2">Grab: On/Off · Image · Hide · Quit (Image is disabled while locked)</td></tr>
+  </table></div>
+  <h3>Panel layout in Calibrate</h3>
+  <div class="tbl"><table>
+    <tr><th>Row</th><th>Buttons</th></tr>
+    <tr><td class="num">1</td><td>Points so far and what to do next</td></tr>
+    <tr><td class="num">2</td><td>Horizontal · Vertical · Undo</td></tr>
+    <tr><td class="num">3</td><td>Grid down · Grid up · controller offset in mm</td></tr>
+    <tr><td class="num">4</td><td>Confirm (once there's a plane) · Cancel</td></tr>
   </table></div>
 </section>
 
@@ -403,7 +435,8 @@ sequenceDiagram
   <h2><span class="n">14</span>Known limits</h2>
   <div class="tbl"><table>
     <tr><th>Limit</th><th>Cause</th><th>What helps</th></tr>
-    <tr><td>Image seems to slide when you tilt your head</td><td>Depth error: the surface sits a few mm above or below the paper (parallax)</td><td>Raise / Lower until head sway shows no slide</td></tr>
+    <tr><td>Image seems to slide when you tilt your head</td><td>Depth error: the surface sits a few mm above or below the paper (parallax)</td><td>Calibrate desk with the controller; Raise / Lower until head sway shows no slide</td></tr>
+    <tr><td>Calibration height off by the same amount every time</td><td>The controller offset doesn't match how you hold the controller</td><td>Grid up / Grid down once (remembered); hold the controller the same way each time</td></tr>
     <tr><td>Paper wobbles when your hand moves in</td><td>The Quest rebuilds passthrough from its own depth guess, which bends around your hand</td><td>Platform limit. Even lighting; get the height right</td></tr>
     <tr><td>Small objects not in Detect</td><td>Detect only knows what Space Setup recorded</td><td>Lasso or Sweep</td></tr>
     <tr><td>Image off or gone after waking</td><td>The headset re-estimated the room; an automatic correction over 15 cm is ignored as a likely glitch</td><td>Hold Unlock and re-place</td></tr>
@@ -411,7 +444,7 @@ sequenceDiagram
   </table></div>
 </section>
 
-<footer>Trace AR · index.html, about.html, guide.html, code.html, site.css, sw.js, manifest.webmanifest, icons/ · This page: docs/design.html · Licensed under the GNU GPL v3 · Written from the code as of 2 Nov 2026 (Resume tracing with persistent anchors; the manual Save spot / Restore spot feature has been removed).</footer>
+<footer>Trace AR · index.html, about.html, guide.html, code.html, site.css, sw.js, manifest.webmanifest, icons/ · This page: docs/design.html · Licensed under the GNU GPL v3 · Written from the code as of 3 Nov 2026 (desk calibration with the controller; moving and turning with the wrist).</footer>
 </main>
 </div>
 
